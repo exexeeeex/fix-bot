@@ -1,0 +1,1 @@
+export { type IconType, ICON_MAP } from './icon-mapper'

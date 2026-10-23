@@ -360,6 +360,8 @@ paket-files/
 # Telerik's JustMock configuration file
 *.jmconfig
 
+docs/
+
 # BizTalk build output
 *.btp.cs
 *.btm.cs

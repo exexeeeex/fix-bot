@@ -1,0 +1,1 @@
+export { MaxUIProvider } from './index.tsx'

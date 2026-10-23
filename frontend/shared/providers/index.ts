@@ -1,0 +1,1 @@
+export { MaxUIProvider } from './max-ui-provider'

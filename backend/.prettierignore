@@ -1,0 +1,8 @@
+node_modules/
+api.exe
+bin/
+dist/
+coverage.out
+.env
+.env.*
+!.env.example
