@@ -1,75 +1,135 @@
-package encrypt
+package student
 
 import (
-	"crypto/aes"
-	"crypto/cipher"
-	"crypto/rand"
-	"crypto/sha256"
-	"fmt"
-	"io"
+  "context"
+  "encoding/base64"
+  "encoding/json"
+  "errors"
+  "fmt"
+  "strings"
+  "uuid"
+
+  "github.com/exexeeeex/fiks-api/internal/domain"
+  encrypt "github.com/exexeeeex/fiks-api/internal/encrypt"
+  "github.com/skip2/go-qrcode"
 )
 
-func genKey(password string) []byte {
-	h := sha256.New()
-	h.Write([]byte(password))
-	return h.Sum(nil)
+type Cache interface {
+  Get(ctx context.Context, key string) (domain.Student, bool, error)
+  GetList(ctx context.Context, key string) ([]domain.Student, bool, error)
+  Set(ctx context.Context, key string, student domain.Student) error
+  SetList(ctx context.Context, key string, students []domain.Student) error
 }
 
-func genIV(password string) []byte {
-	iv := make([]byte, 16)
-	for i := 0; i < 16 && i < len(password); i++ {
-		iv[i] = password[i]
-	}
-	return iv
+type GroupService interface {
+  GetById(ctx context.Context, id string) (domain.Group, error)
 }
 
-func Encrypt(data string, password string) ([]byte, error) {
-	hash := genKey(password)
-	// iv := genIV(password)
-	plaintText := []byte(data)
-
-	block, err := aes.NewCipher(hash)
-	if err != nil {
-		return []byte("Error"), fmt.Errorf("error cipher: %w", err)
-	}
-
-	gcm, err := cipher.NewGCM(block)
-	if err != nil {
-		return []byte("Error"), fmt.Errorf("error gcm: %w", err)
-	}
-
-	nonce := make([]byte, gcm.NonceSize())
-	if _, err := io.ReadFull(rand.Reader, nonce); err != nil {
-		return []byte("Error"), fmt.Errorf("error read: %w", err)
-	}
-
-	return gcm.Seal(nonce, nonce, plaintText, nil), nil
+type Service struct {
+  repo         Repository
+  cache        Cache
+  groupService GroupService
 }
 
-func Decrypt(data []byte, password string) (string, error) {
-	hash := genKey(password)
+func NewService(
+  repo Repository,
+  cache Cache,
+  groupService GroupService,
+) *Service {
+  return &Service{
+    repo:         repo,
+    cache:        cache,
+    groupService: groupService,
+  }
+}
 
-	block, err := aes.NewCipher(hash)
-	if err != nil {
-		return "Error", fmt.Errorf("error cipher: %w", err)
-	}
+func (s *Service) GenerateStudentKey(ctx context.Context) (string, error) {
+    key := uuid.New().String()
 
-	gcm, err := cipher.NewGCM(block)
-	if err != nil {
-		return "Error", fmt.Errorf("error gcm: %w", err)
-	}
+    encrypted, err := encrypt.Encrypt(key, os.Getenv("USER_KEY"))
+    if err != nil {
+        return "", fmt.Errorf("error encrypt key: %w", err)
+    }
 
-	nonseSize := gcm.NonceSize()
-	if len(data) < nonseSize {
-		return "Error", fmt.Errorf("encrypted data is too short")
-	}
+    result := base64.StdEncoding.EncodeToString(encrypted)
 
-	nonce, cipherText := data[:nonseSize], data[nonseSize:]
+    return result, nil
+}
 
-	plainText, err := gcm.Open(nil, nonce, cipherText, nil)
-	if err != nil {
-		return "Error", fmt.Errorf("error decrypt: %w", err)
-	}
 
-	return string(plainText), nil
+func (s *Service) GetByGroupId(ctx context.Context, groupId string) ([]domain.Student, error) {
+  if groupId == "" {
+    return []domain.Student{}, errors.New("groupd_id cannot be empty")
+  }
+
+  if s.cache != nil {
+    cached, found, err := s.cache.GetList(ctx, "students")
+    if err == nil && found {
+      return cached, nil
+    }
+  }
+
+  result, err := s.repo.GetByGroupId(ctx, groupId)
+  if err != nil {
+    return []domain.Student{}, fmt.Errorf("get students: %w", err)
+  }
+
+  if s.cache != nil {
+    _ = s.cache.SetList(ctx, "all", result)
+  }
+
+  return result, nil
+}
+
+func (s *Service) GetById(ctx context.Context, id string) (domain.Student, error) {
+  if id == "" {
+    return domain.Student{}, errors.New("id cannot be empty")
+  }
+
+  if s.cache != nil {
+    cached, found, err := s.cache.Get(ctx, id)
+    if err == nil && found {
+      return cached, nil
+    }
+  }
+
+  result, err := s.repo.GetById(ctx, id)
+  if err != nil {
+    return domain.Student{}, fmt.Errorf("get student: %w", err)
+  }
+
+  if s.cache != nil {
+    _ = s.cache.Set(ctx, id, result)
+  }
+
+  return result, nil
+}
+
+func (s *Service) Create(ctx context.Context, student domain.Student) (domain.Student, error) {
+  student.Name = strings.TrimSpace(student.Name)
+
+  if student.GroupId == "" {
+    return domain.Student{}, errors.New("group_id cannot be empty")
+  }
+
+  if student.Name == "" {
+    return domain.Student{}, errors.New("student Name cannot be empty")
+  }
+
+  _, err := s.groupService.GetById(ctx, student.GroupId)
+  if err != nil {
+    return domain.Student{}, fmt.Errorf("validate student group: %w", err)
+  }
+
+  student.Id = uuid.NewV4().String()
+
+  if err := s.repo.Create(ctx, &student); err != nil {
+    return domain.Student{}, fmt.Errorf("create student: %w", err)
+  }
+
+  if s.cache != nil {
+    _ = s.cache.Set(ctx, student.Id, student)
+  }
+
+  return student, nil
 }
