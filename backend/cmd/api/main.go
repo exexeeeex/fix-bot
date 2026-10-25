@@ -13,9 +13,11 @@ import (
 
 	"github.com/exexeeeex/fiks-api/internal/cache"
 	"github.com/exexeeeex/fiks-api/internal/config"
+	"github.com/exexeeeex/fiks-api/internal/domain"
 	"github.com/exexeeeex/fiks-api/internal/httpserver"
 
 	groupapi "github.com/exexeeeex/fiks-api/internal/group"
+	qrcodeapi "github.com/exexeeeex/fiks-api/internal/qr"
 	studentapi "github.com/exexeeeex/fiks-api/internal/student"
 
 	gormpostgres "gorm.io/driver/postgres"
@@ -78,11 +80,13 @@ func run() error {
 	}
 
 	groupHandler, groupService := CreateGroup(db, redisClient)
-	studentHandler := CreateStudent(db, redisClient, groupService)
+	studentHandler, studentService := CreateStudent(db, redisClient, groupService)
+	qrHander, _ := CreateQrCode(studentService, groupService)
 
 	server := httpserver.New(
 		studentHandler,
 		groupHandler,
+		qrHander,
 	)
 	server.Addr = ":" + cfg.Port
 
@@ -129,18 +133,20 @@ func CreateStudent(
 	db *gorm.DB,
 	redis *redis.Client,
 	groupService studentapi.GroupService,
-) *studentapi.Handler {
+) (*studentapi.Handler, *studentapi.Service) {
 	repo := studentapi.NewRepository(db)
-	studentCache := cache.NewStudentCache(redis)
+	studentCache := cache.New[domain.Student](redis, "student:")
+	studentListCache := cache.New[[]domain.Student](redis, "students:")
 
 	service := studentapi.NewService(
 		repo,
 		studentCache,
+		studentListCache,
 		groupService,
 	)
 
 	handler := studentapi.NewHandler(service)
-	return handler
+	return handler, service
 }
 
 func CreateGroup(
@@ -148,9 +154,20 @@ func CreateGroup(
 	redis *redis.Client,
 ) (*groupapi.Handler, *groupapi.Service) {
 	repo := groupapi.NewRepository(db)
-	groupCache := cache.NewGroupCache(redis)
-	service := groupapi.NewService(repo, groupCache)
+	groupCache := cache.New[domain.Group](redis, "group:")
+	groupListCache := cache.New[[]domain.Group](redis, "groups:")
+	service := groupapi.NewService(repo, groupCache, groupListCache)
 	handler := groupapi.NewHandler(service)
+
+	return handler, service
+}
+
+func CreateQrCode(
+	studentService *studentapi.Service,
+	groupService *groupapi.Service,
+) (*qrcodeapi.Handler, *qrcodeapi.Service) {
+	service := qrcodeapi.NewService(studentService, groupService)
+	handler := qrcodeapi.NewHandler(service)
 
 	return handler, service
 }
