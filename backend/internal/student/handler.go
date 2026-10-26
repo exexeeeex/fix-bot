@@ -3,6 +3,8 @@ package student
 import (
 	"encoding/base64"
 	"net/http"
+	"os"
+	"time"
 
 	"github.com/exexeeeex/fiks-api/internal/config"
 	"github.com/exexeeeex/fiks-api/internal/domain"
@@ -30,8 +32,8 @@ func NewHandler(service *Service) *Handler {
 func (h *Handler) RegisterRoutes(mux *http.ServeMux) {
 	mux.HandleFunc("GET /api/v1/students/{id}", h.getStudentById)
 	mux.HandleFunc("GET /api/v1/students/by-group/{groupId}", h.getStudentsByGroupId)
+	mux.HandleFunc("POST /api/v1/students/validate-key", h.validateStudentKey)
 	mux.HandleFunc("POST /api/v1/students", h.createStudent)
-	mux.HandleFunc("POST /api/v1/students/qr-code", h.generateQrCode)
 	mux.HandleFunc("POST /api/v1/students/decrypt", h.decryptStudent)
 }
 
@@ -65,7 +67,7 @@ func (h *Handler) decryptStudent(
 		return
 	}
 
-	result, err := encrypt.Decrypt(encrypted, "studentId")
+	result, err := encrypt.Decrypt(encrypted, os.Getenv("QR_CODE_KEY"))
 	if err != nil {
 		writeError(w, http.StatusBadRequest, "decryption failed")
 		return
@@ -76,38 +78,36 @@ func (h *Handler) decryptStudent(
 	_, _ = w.Write([]byte(result))
 }
 
-func (h *Handler) generateQrCode(
-	w http.ResponseWriter,
-	r *http.Request,
-) {
-	var req generateQr
+func (h *Handler) validateStudentKey(w http.ResponseWriter, r *http.Request) {
+	var request struct {
+		Key string `json:"key"`
+	}
 
-	if err := config.DecodeJSON(w, r, &req); err != nil {
+	if err := config.DecodeJSON(w, r, &request); err != nil {
 		writeError(w, http.StatusBadRequest, "invalid JSON: "+err.Error())
 		return
 	}
 
-	if req.StudentId == "" {
-		writeError(w, http.StatusBadRequest, "student_id cannot be empty")
+	if request.Key == "" {
+		writeError(w, http.StatusBadRequest, "value cannot be empty")
 		return
 	}
 
-	result, err := h.service.GenerateStudentQrCode(
-		r.Context(),
-		req.StudentId,
-	)
+	result, err := h.service.ValidateStudentKey(r.Context(), request.Key)
 	if err != nil {
 		writeError(w, http.StatusInternalServerError, err.Error())
 		return
 	}
 
-	w.Header().Set("Content-Type", "image/png")
-	w.Header().Set("Content-Disposition", `inline; filename="student-qr.png"`)
-	w.WriteHeader(http.StatusOK)
-
-	if _, err := w.Write(result); err != nil {
-		return
+	model := struct {
+		Success      bool      `json:"success"`
+		ValidateTime time.Time `json:"validate_time"`
+	}{
+		Success:      result,
+		ValidateTime: time.Now(),
 	}
+
+	config.WriteJSON(w, http.StatusOK, model)
 }
 
 func (h *Handler) getStudentsByGroupId(w http.ResponseWriter, r *http.Request) {

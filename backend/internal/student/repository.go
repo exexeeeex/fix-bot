@@ -25,7 +25,7 @@ func NewRepository(db *gorm.DB) Repository {
 }
 
 func (r *repository) GetById(ctx context.Context, id string) (domain.Student, error) {
-	return  repo.GetByID[domain.Student](ctx, r.db, id, "student")
+	return repo.GetByID[domain.Student](ctx, r.db, id, "student")
 }
 
 func (r *repository) GetByGroupId(ctx context.Context, groupId string) ([]domain.Student, error) {
