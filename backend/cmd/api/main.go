@@ -137,11 +137,13 @@ func CreateStudent(
 	repo := studentapi.NewRepository(db)
 	studentCache := cache.New[domain.Student](redis, "student:")
 	studentListCache := cache.New[[]domain.Student](redis, "students:")
+	studentKeyCache := cache.NewStudentKeyCache(redis)
 
 	service := studentapi.NewService(
 		repo,
 		studentCache,
 		studentListCache,
+		studentKeyCache,
 		groupService,
 	)
 

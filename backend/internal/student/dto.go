@@ -1,7 +1,13 @@
-package student
+package qr
 
-type createStudentRequest struct {
-	Name     string `json:"name"`
-	GroupId  string `json:"group_id"`
-	IsActive bool   `json:"is_active"`
+import "github.com/exexeeeex/fiks-api/internal/domain"
+
+type generateQrRequest struct {
+	StudentId string `json:"student_id"`
+}
+
+type ReadQrResponse struct {
+	Id    string       `json:"id"`
+	Group domain.Group `json:"group"`
+	Key   string       `json:"key"`
 }

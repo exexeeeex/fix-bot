@@ -1,126 +1,104 @@
-package group
+package qr
 
 import (
 	"context"
-	"errors"
+	"encoding/base64"
+	"encoding/json"
 	"fmt"
+	"os"
 
 	"github.com/exexeeeex/fiks-api/internal/domain"
+	"github.com/exexeeeex/fiks-api/internal/encrypt"
+	"github.com/skip2/go-qrcode"
 )
 
-type GroupsCache interface {
-	Get(
-		ctx context.Context,
-		key string,
-	) (domain.Group, bool, error)
-
-	Set(
-		ctx context.Context,
-		key string,
-		student domain.Group,
-		ttl int,
-	) error
+type StudentService interface {
+	GetById(ctx context.Context, id string) (domain.Student, error)
+	GenerateStudentKey(ctx context.Context) (string, error)
 }
 
-type GroupListCache interface {
-	Get(
-		ctx context.Context,
-		key string,
-	) ([]domain.Group, bool, error)
-
-	Set(
-		ctx context.Context,
-		key string,
-		students []domain.Group,
-		ttl int,
-	) error
+type GroupService interface {
+	GetById(ctx context.Context, id string) (domain.Group, error)
 }
 
 type Service struct {
-	repo      Repository
-	cache     GroupsCache
-	listCache GroupListCache
+	studentService StudentService
+	groupService   GroupService
 }
 
-func NewService(
-	repo Repository,
-	cache GroupsCache,
-	listCache GroupListCache,
-) *Service {
+func NewService(studentService StudentService, groupService GroupService) *Service {
 	return &Service{
-		repo:      repo,
-		cache:     cache,
-		listCache: listCache,
+		studentService: studentService,
+		groupService:   groupService,
 	}
 }
 
-func (s *Service) GetByName(
-	ctx context.Context,
-	name string,
-	organizationId string,
-) ([]domain.Group, error) {
-	if name == "" {
-		return []domain.Group{}, errors.New("name cannot be empty")
+func (s *Service) ReadQrCode(ctx context.Context, data string) (ReadQrResponse, error) {
+	if data == "" {
+		return ReadQrResponse{}, fmt.Errorf("data cannot be empty")
 	}
 
-	if s.cache != nil {
-		cached, found, err := s.listCache.Get(ctx, name)
-		if err == nil && found {
-			return cached, nil
-		}
-	}
-
-	result, err := s.repo.GetByName(ctx, name, organizationId)
+	encrypted, err := base64.StdEncoding.DecodeString(data)
 	if err != nil {
-		return []domain.Group{}, fmt.Errorf("get group by name: %w", err)
+		return ReadQrResponse{}, fmt.Errorf("decode data: %w", err)
 	}
 
-	if s.cache != nil {
-		_ = s.listCache.Set(ctx, name, result, 10)
+	decrypted, err := encrypt.Decrypt(encrypted, os.Getenv("QR_CODE_KEY"))
+	if err != nil {
+		return ReadQrResponse{}, fmt.Errorf("decrypt data: %w", err)
+	}
+
+	result := ReadQrResponse{}
+
+	if err := json.Unmarshal([]byte(decrypted), &result); err != nil {
+		return ReadQrResponse{}, fmt.Errorf("unmarshal: %w", err)
 	}
 
 	return result, nil
 }
 
-func (s *Service) GetById(ctx context.Context, id string) (domain.Group, error) {
-	if id == "" {
-		return domain.Group{}, errors.New("id cannot be empty")
+func (s *Service) GenerateQrCode(ctx context.Context, studentId string) ([]byte, error) {
+	if studentId == "" {
+		return nil, fmt.Errorf("student_id cannot be empty")
 	}
 
-	if s.cache != nil {
-		cached, found, err := s.cache.Get(ctx, id)
-		if err == nil && found {
-			return cached, nil
-		}
-	}
-
-	result, err := s.repo.GetById(ctx, id)
+	student, err := s.studentService.GetById(ctx, studentId)
 	if err != nil {
-		return domain.Group{}, fmt.Errorf("get group by id: %w", err)
+		return []byte("Error"), fmt.Errorf("get student by id: %w", err)
 	}
 
-	if s.cache != nil {
-		_ = s.cache.Set(ctx, id, result, 10)
-	}
-
-	return result, nil
-}
-
-func (s *Service) List(ctx context.Context, organizationId string) ([]domain.Group, error) {
-	if s.cache != nil {
-		cached, found, err := s.listCache.Get(ctx, "all")
-		if err == nil && found {
-			return cached, nil
-		}
-	}
-
-	result, err := s.repo.List(ctx, organizationId)
+	group, err := s.groupService.GetById(ctx, student.GroupId)
 	if err != nil {
-		return []domain.Group{}, fmt.Errorf("list group: %w", err)
+		return []byte("Error"), fmt.Errorf("get group by id: %w", err)
 	}
 
-	if s.cache != nil {
-		_ = s.listCache.Set(ctx, "all", result, 10)
+	key, err := s.studentService.GenerateStudentKey(ctx)
+	if err != nil {
+		return []byte("Error"), fmt.Errorf("generate key: %w", err)
 	}
-	return result, nil
+
+	model := ReadQrResponse{
+		Id:    student.Id,
+		Group: group,
+		Key:   key,
+	}
+
+	data, err := json.Marshal(model)
+	if err != nil {
+		return []byte("Error"), fmt.Errorf("marshal student model: %w", err)
+	}
+
+	encrypted, err := encrypt.Encrypt(string(data), os.Getenv("QR_CODE_KEY"))
+	if err != nil {
+		return []byte(""), fmt.Errorf("encrypt student model: %w", err)
+	}
+
+	encoded := base64.StdEncoding.EncodeToString(encrypted)
+
+	png, err := qrcode.Encode(encoded, qrcode.Medium, 256)
+	if err != nil {
+		return []byte(""), fmt.Errorf("failed to generate student QR code: %w", err)
+	}
+
+	return png, nil
 }
