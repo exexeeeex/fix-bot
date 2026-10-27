@@ -7,6 +7,7 @@ type Student struct {
 	Name      string    `json:"name"`
 	IsActive  bool      `json:"is_active"`
 	GroupId   string    `json:"group_id"`
+	UserId    string    `json:"user_id"`
 	CreatedAt time.Time `json:"created_at"`
 	UpdatedAt time.Time `json:"updated_at"`
 }

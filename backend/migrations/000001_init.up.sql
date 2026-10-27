@@ -53,7 +53,23 @@ CREATE TABLE visits (
     updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
 
+CREATE TABLE applications (
+    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+
+    name TEXT NOT NULL,
+
+    status VARCHAR(20) NOT NULL DEFAULT 'pending'
+        CHECK (status IN ('pending', 'approved', 'rejected')),
+
+    type VARCHAR(20) NOT NULL
+        CHECK (type IN ('student', 'teacher')),
+
+    created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+
 INSERT INTO roles (id, name) VALUES
+    ('10000000-0000-0000-0000-000000000003', 'student');
     ('10000000-0000-0000-0000-000000000001', 'teacher'),
     ('10000000-0000-0000-0000-000000000002', 'admin');
 
