@@ -25,5 +25,5 @@ type Application struct {
 	OrganizationId string            `json:"organization_id"`
 	GroupId        string            `json:"group_id"`
 	CreatedAt      time.Time         `json:"created_at"`
-	Updatedat      time.Time         `json:"updated_at"`
+	UpdatedAt      time.Time         `json:"updated_at"`
 }
