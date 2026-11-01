@@ -13,7 +13,7 @@ export const LINKS: Link[] = [
     {
         id: 1,
         name: 'Пропуск',
-        href: '/',
+        href: '/home',
         icon: 'qr',
         access: 'user'
     },
