@@ -1,114 +1,90 @@
-package student
+package group
 
 import (
 	"context"
-	"encoding/base64"
 	"errors"
 	"fmt"
-	"os"
-	"strings"
-	"uuid"
 
 	"github.com/exexeeeex/fiks-api/internal/domain"
-	encrypt "github.com/exexeeeex/fiks-api/internal/encrypt"
 )
 
-type StudentCache interface {
+type GroupsCache interface {
 	Get(
 		ctx context.Context,
 		key string,
-	) (domain.Student, bool, error)
+	) (domain.Group, bool, error)
 
 	Set(
 		ctx context.Context,
 		key string,
-		student domain.Student,
+		student domain.Group,
 		ttl int,
 	) error
 }
 
-type StudentListCache interface {
+type GroupListCache interface {
 	Get(
 		ctx context.Context,
 		key string,
-	) ([]domain.Student, bool, error)
+	) ([]domain.Group, bool, error)
 
 	Set(
 		ctx context.Context,
 		key string,
-		students []domain.Student,
+		students []domain.Group,
 		ttl int,
 	) error
-}
-
-type GroupService interface {
-	GetById(ctx context.Context, id string) (domain.Group, error)
 }
 
 type Service struct {
-	repo         Repository
-	cache        StudentCache
-	listCache    StudentListCache
-	groupService GroupService
+	repo      Repository
+	cache     GroupsCache
+	listCache GroupListCache
 }
 
 func NewService(
 	repo Repository,
-	cache StudentCache,
-	listCache StudentListCache,
-	groupService GroupService,
+	cache GroupsCache,
+	listCache GroupListCache,
 ) *Service {
 	return &Service{
-		repo:         repo,
-		cache:        cache,
-		listCache:    listCache,
-		groupService: groupService,
+		repo:      repo,
+		cache:     cache,
+		listCache: listCache,
 	}
 }
 
-func (s *Service) GenerateStudentKey(ctx context.Context) (string, error) {
-	key := uuid.New().String()
-
-	encrypted, err := encrypt.Encrypt(key, os.Getenv("USER_KEY"))
-	if err != nil {
-		return "", fmt.Errorf("error encrypt key: %w", err)
-	}
-
-	result := base64.StdEncoding.EncodeToString(encrypted)
-
-	return result, nil
-}
-
-func (s *Service) GetByGroupId(
+func (s *Service) GetByName(
 	ctx context.Context,
-	groupId string,
-) ([]domain.Student, error) {
-	if groupId == "" {
-		return nil, errors.New("group_id cannot be empty")
+	name string,
+	organizationId string,
+) ([]domain.Group, error) {
+	if name == "" {
+		return []domain.Group{}, errors.New("name cannot be empty")
 	}
 
-	if s.listCache != nil {
-		cached, found, err := s.listCache.Get(ctx, groupId)
+	if s.cache != nil {
+		cached, found, err := s.listCache.Get(ctx, name)
 		if err == nil && found {
 			return cached, nil
 		}
 	}
 
-	result, err := s.repo.GetByGroupId(ctx, groupId)
+	result, err := s.repo.GetByName(ctx, name, organizationId)
 	if err != nil {
-		return nil, fmt.Errorf("get students: %w", err)
+		return []domain.Group{}, fmt.Errorf("get group by name: %w", err)
 	}
 
-	if s.listCache != nil {
-		_ = s.listCache.Set(ctx, groupId, result, 10)
+	if s.cache != nil {
+		_ = s.listCache.Set(ctx, name, result, 10)
 	}
 
 	return result, nil
 }
 
-func (s *Service) GetById(ctx context.Context, id string) (domain.Student, error) {
+func (s *Service) GetById(ctx context.Context, id string) (domain.Group, error) {
 	if id == "" {
-		return domain.Student{}, errors.New("id cannot be empty")
+		return domain.Group{}, errors.New("id cannot be empty")
 	}
 
 	if s.cache != nil {
@@ -120,7 +96,7 @@ func (s *Service) GetById(ctx context.Context, id string) (domain.Student, error
 
 	result, err := s.repo.GetById(ctx, id)
 	if err != nil {
-		return domain.Student{}, fmt.Errorf("get student: %w", err)
+		return domain.Group{}, fmt.Errorf("get group by id: %w", err)
 	}
 
 	if s.cache != nil {
@@ -130,31 +106,21 @@ func (s *Service) GetById(ctx context.Context, id string) (domain.Student, error
 	return result, nil
 }
 
-func (s *Service) Create(ctx context.Context, student domain.Student) (domain.Student, error) {
-	student.Name = strings.TrimSpace(student.Name)
-
-	if student.GroupId == "" {
-		return domain.Student{}, errors.New("group_id cannot be empty")
+func (s *Service) List(ctx context.Context, organizationId string) ([]domain.Group, error) {
+	if s.cache != nil {
+		cached, found, err := s.listCache.Get(ctx, "all")
+		if err == nil && found {
+			return cached, nil
+		}
 	}
 
-	if student.Name == "" {
-		return domain.Student{}, errors.New("student Name cannot be empty")
-	}
-
-	_, err := s.groupService.GetById(ctx, student.GroupId)
+	result, err := s.repo.List(ctx, organizationId)
 	if err != nil {
-		return domain.Student{}, fmt.Errorf("validate student group: %w", err)
-	}
-
-	student.Id = uuid.NewV4().String()
-
-	if err := s.repo.Create(ctx, &student); err != nil {
-		return domain.Student{}, fmt.Errorf("create student: %w", err)
+		return []domain.Group{}, fmt.Errorf("list group: %w", err)
 	}
 
 	if s.cache != nil {
-		_ = s.cache.Set(ctx, student.Id, student, 10)
+		_ = s.listCache.Set(ctx, "all", result, 10)
 	}
-
-	return student, nil
+	return result, nil
 }

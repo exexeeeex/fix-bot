@@ -14,7 +14,7 @@ import (
 
 type StudentService interface {
 	GetById(ctx context.Context, id string) (domain.Student, error)
-	GenerateStudentKey(ctx context.Context) (string, error)
+	GenerateStudentKey(ctx context.Context, studentId string) (string, error)
 }
 
 type GroupService interface {
@@ -72,7 +72,7 @@ func (s *Service) GenerateQrCode(ctx context.Context, studentId string) ([]byte,
 		return []byte("Error"), fmt.Errorf("get group by id: %w", err)
 	}
 
-	key, err := s.studentService.GenerateStudentKey(ctx)
+	key, err := s.studentService.GenerateStudentKey(ctx, studentId)
 	if err != nil {
 		return []byte("Error"), fmt.Errorf("generate key: %w", err)
 	}

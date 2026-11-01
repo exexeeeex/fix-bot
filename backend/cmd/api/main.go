@@ -16,7 +16,9 @@ import (
 	"github.com/exexeeeex/fiks-api/internal/domain"
 	"github.com/exexeeeex/fiks-api/internal/httpserver"
 
+	applicationapi "github.com/exexeeeex/fiks-api/internal/application"
 	groupapi "github.com/exexeeeex/fiks-api/internal/group"
+	maxauthapi "github.com/exexeeeex/fiks-api/internal/maxauth"
 	qrcodeapi "github.com/exexeeeex/fiks-api/internal/qr"
 	studentapi "github.com/exexeeeex/fiks-api/internal/student"
 
@@ -82,11 +84,15 @@ func run() error {
 	groupHandler, groupService := CreateGroup(db, redisClient)
 	studentHandler, studentService := CreateStudent(db, redisClient, groupService)
 	qrHander, _ := CreateQrCode(studentService, groupService)
+	applicationHandler, _ := CreateApplication(db, redisClient, groupService)
+	maxauthHandler := CreateMaxAuth()
 
 	server := httpserver.New(
 		studentHandler,
 		groupHandler,
 		qrHander,
+		applicationHandler,
+		maxauthHandler,
 	)
 	server.Addr = ":" + cfg.Port
 
@@ -94,6 +100,9 @@ func run() error {
 
 	go func() {
 		logger.Info("HTTP server starting", "address", server.Addr)
+		if os.Getenv("APP_ENV") == "development" {
+			logger.Info("development mode")
+		}
 
 		if err := server.ListenAndServe(); err != nil &&
 			!errors.Is(err, http.ErrServerClosed) {
@@ -164,6 +173,20 @@ func CreateGroup(
 	return handler, service
 }
 
+func CreateApplication(
+	db *gorm.DB,
+	redis *redis.Client,
+	groupService applicationapi.GroupService,
+) (*applicationapi.Handler, *applicationapi.Service) {
+	repo := applicationapi.NewRepository(db)
+	applicatiomCache := cache.New[domain.Application](redis, "application:")
+	applicationListCache := cache.New[[]domain.Application](redis, "applications:")
+	service := applicationapi.NewService(repo, applicatiomCache, applicationListCache, groupService)
+	handler := applicationapi.NewHandler(service)
+
+	return handler, service
+}
+
 func CreateQrCode(
 	studentService *studentapi.Service,
 	groupService *groupapi.Service,
@@ -172,4 +195,11 @@ func CreateQrCode(
 	handler := qrcodeapi.NewHandler(service)
 
 	return handler, service
+}
+
+func CreateMaxAuth() *maxauthapi.Handler {
+	service := maxauthapi.NewService()
+	handler := maxauthapi.NewHandler(service)
+
+	return handler
 }
