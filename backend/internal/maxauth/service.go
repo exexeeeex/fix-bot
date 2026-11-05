@@ -1,6 +1,7 @@
 package maxauth
 
 import (
+	"context"
 	"crypto/hmac"
 	"crypto/sha256"
 	"encoding/hex"
@@ -13,26 +14,66 @@ import (
 	"strconv"
 	"strings"
 	"time"
+	"uuid"
+
+	"github.com/exexeeeex/fiks-api/internal/domain"
+	jwt "github.com/exexeeeex/fiks-api/internal/jwt"
+	jwtgo "github.com/golang-jwt/jwt/v5"
+	"gorm.io/gorm"
 )
 
-type Service struct {
-	testEnabled bool
+type ApplicationService interface {
+	GetByMaxId(ctx context.Context, maxId string) (domain.Application, error)
 }
 
-func NewService() *Service {
+type RoleService interface {
+	GetById(ctx context.Context, id string) (domain.Role, error)
+}
+
+type JwtService interface {
+	WriteTokensPair(jwt.AccessRequest) (jwt.TokensPair, error)
+	ValidateToken(tokenString string, tokenType string) (*jwtgo.Token, error)
+}
+
+type UserService interface {
+	Create(ctx context.Context, user domain.User) (domain.User, error)
+	GetByMaxId(ctx context.Context, maxId string) (domain.User, error)
+}
+
+var ErrInvalidRefreshToken = errors.New("invalid refresh token")
+var ErrRefreshTokenRequired = errors.New("refresh token is required")
+
+type Service struct {
+	testEnabled        bool
+	userService        UserService
+	jwtService         JwtService
+	roleService        RoleService
+	applicationService ApplicationService
+}
+
+func NewService(
+	userService UserService,
+	jwtService JwtService,
+	roleService RoleService,
+	applicationService ApplicationService,
+) *Service {
 	return &Service{
-		testEnabled: os.Getenv("APP_ENV") == "development",
+		testEnabled:        os.Getenv("APP_ENV") == "development",
+		userService:        userService,
+		jwtService:         jwtService,
+		roleService:        roleService,
+		applicationService: applicationService,
 	}
 }
 
-func (s *Service) Authenticate(data string) (MaxUser, error) {
+func (s *Service) Authenticate(ctx context.Context, data string) (AuthResponse, error) {
 	if data == "" {
-		return MaxUser{}, errors.New("data is required")
+		return AuthResponse{}, errors.New("data is required")
 	}
 
 	params, err := s.ValidateInitData(data)
 	if err != nil {
-		return MaxUser{}, err
+		return AuthResponse{}, err
 	}
 
 	authDate, err := strconv.ParseInt(
@@ -41,38 +82,145 @@ func (s *Service) Authenticate(data string) (MaxUser, error) {
 		64,
 	)
 	if err != nil || authDate <= 0 {
-		return MaxUser{}, errors.New("invalid auth_date")
+		return AuthResponse{}, errors.New("invalid auth_date")
 	}
 
 	createdAt := time.Unix(authDate, 0)
 	now := time.Now()
 
 	if createdAt.After(now.Add(time.Minute)) {
-		return MaxUser{}, errors.New("auth_date is not the future")
+		return AuthResponse{}, errors.New("auth_date is not the future")
 	}
 
 	if !s.testEnabled {
 		if now.Sub(createdAt) > time.Hour {
-			return MaxUser{}, errors.New("init data expired")
+			return AuthResponse{}, errors.New("init data expired")
 		}
 	}
 
 	userJSON := params.Get("user")
 	if userJSON == "" {
-		return MaxUser{}, errors.New("user not found")
+		return AuthResponse{}, errors.New("user not found")
 	}
 
 	var user MaxUser
 
 	if err := json.Unmarshal([]byte(userJSON), &user); err != nil {
-		return MaxUser{}, errors.New("invalid user data")
+		return AuthResponse{}, errors.New("invalid user data")
 	}
 
 	if user.Id <= 0 {
-		return MaxUser{}, errors.New("invalid user id")
+		return AuthResponse{}, errors.New("invalid user id")
 	}
 
-	return user, nil
+	authenticatedUser, err := s.userService.Create(ctx, domain.User{
+		Id:    uuid.NewV4().String(),
+		MaxId: strconv.Itoa(user.Id),
+	})
+
+	if err != nil {
+		return AuthResponse{}, fmt.Errorf("get or create user: %w", err)
+	}
+
+	role, err := s.roleService.GetById(ctx, authenticatedUser.RoleId)
+	if err != nil {
+		return AuthResponse{}, fmt.Errorf("get user role: %w", err)
+	}
+
+	applicationStatus, err := s.getApplicationStatus(ctx, authenticatedUser.MaxId)
+	if err != nil {
+		return AuthResponse{}, fmt.Errorf("get application status: %w", err)
+	}
+
+	tokens, err := s.jwtService.WriteTokensPair(jwt.AccessRequest{
+		Id:                authenticatedUser.Id,
+		MaxId:             authenticatedUser.MaxId,
+		ApplicationStatus: applicationStatus,
+		Role:              role.Name,
+	})
+
+	if err != nil {
+		return AuthResponse{}, fmt.Errorf("write tokens: %w", err)
+	}
+
+	return AuthResponse{
+		Success: true,
+		Tokens:  tokens,
+		User: AuthenticatedUser{
+			Id:                authenticatedUser.Id,
+			MaxId:             authenticatedUser.MaxId,
+			FirstName:         user.FirstName,
+			LastName:          user.LastName,
+			Username:          user.Username,
+			LanguageCode:      user.LanguageCode,
+			PhotoURL:          user.PhotoURL,
+			ApplicationStatus: applicationStatus,
+		},
+	}, nil
+}
+
+func (s *Service) Refresh(ctx context.Context, refreshToken string) (jwt.TokensPair, error) {
+	if refreshToken == "" {
+		return jwt.TokensPair{}, ErrRefreshTokenRequired
+	}
+
+	token, err := s.jwtService.ValidateToken(refreshToken, "refresh")
+	if err != nil {
+		return jwt.TokensPair{}, fmt.Errorf("%w: %v", ErrInvalidRefreshToken, err)
+	}
+
+	claims, ok := token.Claims.(jwtgo.MapClaims)
+	if !ok || !token.Valid {
+		return jwt.TokensPair{}, ErrInvalidRefreshToken
+	}
+
+	userId, ok := claims["id"].(string)
+	if !ok || userId == "" {
+		return jwt.TokensPair{}, fmt.Errorf("%w: user id is missing", ErrInvalidRefreshToken)
+	}
+	maxId, ok := claims["maxId"].(string)
+	if !ok || maxId == "" {
+		return jwt.TokensPair{}, fmt.Errorf("%w: max id is missing", ErrInvalidRefreshToken)
+	}
+
+	user, err := s.userService.GetByMaxId(ctx, maxId)
+	if err != nil {
+		return jwt.TokensPair{}, fmt.Errorf("get user for refresh: %w", err)
+	}
+	if user.Id != userId {
+		return jwt.TokensPair{}, errors.New("refresh token user does not match")
+	}
+
+	role, err := s.roleService.GetById(ctx, user.RoleId)
+	if err != nil {
+		return jwt.TokensPair{}, fmt.Errorf("get user role: %w", err)
+	}
+	applicationStatus, err := s.getApplicationStatus(ctx, user.MaxId)
+	if err != nil {
+		return jwt.TokensPair{}, fmt.Errorf("get application status: %w", err)
+	}
+
+	tokens, err := s.jwtService.WriteTokensPair(jwt.AccessRequest{
+		Id:                user.Id,
+		MaxId:             user.MaxId,
+		ApplicationStatus: applicationStatus,
+		Role:              role.Name,
+	})
+	if err != nil {
+		return jwt.TokensPair{}, fmt.Errorf("write refreshed tokens: %w", err)
+	}
+	return tokens, nil
+}
+
+func (s *Service) getApplicationStatus(ctx context.Context, maxId string) (domain.ApplicationStatus, error) {
+	application, err := s.applicationService.GetByMaxId(ctx, maxId)
+	if errors.Is(err, gorm.ErrRecordNotFound) {
+		return domain.ApplicationStatusNone, nil
+	}
+	if err != nil {
+		return "", err
+	}
+	return application.Status, nil
 }
 
 func (s *Service) ValidateInitData(
@@ -91,7 +239,7 @@ func (s *Service) ValidateInitData(
 
 	hashValues, ok := params["hash"]
 	if !ok || len(hashValues) != 1 || hashValues[0] == "" {
-		return nil, errors.New("hash is mising")
+		return nil, errors.New("hash is missing")
 	}
 
 	originalHash := hashValues[0]
