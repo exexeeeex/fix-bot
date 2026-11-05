@@ -2,6 +2,7 @@ package maxauth
 
 import (
 	"encoding/json"
+	"errors"
 	"net/http"
 	"os"
 	"time"
@@ -9,18 +10,9 @@ import (
 	"github.com/exexeeeex/fiks-api/internal/config"
 )
 
-type errorResponse struct {
-	Success bool   `json:"success"`
-	Error   string `json:"error"`
-}
-
 type Handler struct {
 	service     *Service
 	testEnabled bool
-}
-
-func writeError(w http.ResponseWriter, status int, message string) {
-	config.WriteJSON(w, status, errorResponse{Error: message})
 }
 
 func NewHandler(
@@ -34,10 +26,31 @@ func NewHandler(
 
 func (h *Handler) RegisterRoutes(mux *http.ServeMux) {
 	mux.HandleFunc("POST /api/v1/auth/max", h.authenticate)
+	mux.HandleFunc("POST /api/v1/auth/max/refresh", h.refresh)
 	if h.testEnabled {
 		mux.HandleFunc("POST /api/v1/auth/max/test", h.testAuthenticate)
 		mux.HandleFunc("GET /api/v1/auth/max/test-data", h.testData)
 	}
+}
+
+func (h *Handler) refresh(w http.ResponseWriter, r *http.Request) {
+	var req RefreshRequest
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		config.WriteError(w, http.StatusBadRequest, "invalid JSON")
+		return
+	}
+
+	tokens, err := h.service.Refresh(r.Context(), req.RefreshToken)
+	if err != nil {
+		if errors.Is(err, ErrInvalidRefreshToken) || errors.Is(err, ErrRefreshTokenRequired) {
+			config.WriteError(w, http.StatusUnauthorized, "invalid refresh token")
+			return
+		}
+		config.WriteError(w, http.StatusInternalServerError, "failed to refresh tokens: "+err.Error())
+		return
+	}
+
+	config.WriteJSON(w, http.StatusOK, tokens)
 }
 
 func (h *Handler) testAuthenticate(
@@ -58,7 +71,15 @@ func (h *Handler) testAuthenticate(
 
 	config.WriteJSON(w, http.StatusOK, AuthResponse{
 		Success: true,
-		User:    user,
+		User: AuthenticatedUser{
+			Id:           "test-user-id",
+			MaxId:        "12345",
+			FirstName:    user.FirstName,
+			LastName:     user.LastName,
+			Username:     user.Username,
+			LanguageCode: user.LanguageCode,
+			PhotoURL:     user.PhotoURL,
+		},
 	})
 }
 
@@ -74,18 +95,18 @@ func (h *Handler) testData(
 	var user MaxUser
 
 	if err := json.NewDecoder(r.Body).Decode(&user); err != nil {
-		writeError(w, http.StatusBadRequest, "invalid JSON")
+		config.WriteError(w, http.StatusBadRequest, "invalid JSON")
 		return
 	}
 
 	if user.Id <= 0 {
-		writeError(w, http.StatusBadRequest, "invalid user id")
+		config.WriteError(w, http.StatusBadRequest, "invalid user id")
 		return
 	}
 
 	data, err := h.service.GenerateTestInitialData(user, time.Now())
 	if err != nil {
-		writeError(w, http.StatusInternalServerError, err.Error())
+		config.WriteError(w, http.StatusInternalServerError, err.Error())
 		return
 	}
 
@@ -101,18 +122,15 @@ func (h *Handler) authenticate(
 	var req AuthRequest
 
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-		writeError(w, http.StatusBadRequest, "invalid JSON")
+		config.WriteError(w, http.StatusBadRequest, "invalid JSON")
 		return
 	}
 
-	user, err := h.service.Authenticate(req.InitData)
+	response, err := h.service.Authenticate(r.Context(), req.InitData)
 	if err != nil {
-		writeError(w, http.StatusUnauthorized, err.Error())
+		config.WriteError(w, http.StatusUnauthorized, err.Error())
 		return
 	}
 
-	config.WriteJSON(w, http.StatusOK, AuthResponse{
-		Success: true,
-		User:    user,
-	})
+	config.WriteJSON(w, http.StatusOK, response)
 }
