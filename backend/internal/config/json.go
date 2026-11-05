@@ -16,6 +16,12 @@ func WriteJSON(w http.ResponseWriter, status int, data any) {
 	}
 }
 
+func WriteError(w http.ResponseWriter, status int, message string) {
+	WriteJSON(w, status, struct {
+		Error string `json:"error"`
+	}{Error: message})
+}
+
 func DecodeJSON(w http.ResponseWriter, r *http.Request, dst any) error {
 	r.Body = http.MaxBytesReader(w, r.Body, 1<<20)
 
