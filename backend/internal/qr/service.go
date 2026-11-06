@@ -14,22 +14,34 @@ import (
 
 type StudentService interface {
 	GetById(ctx context.Context, id string) (domain.Student, error)
+	GetByUserId(ctx context.Context, userId string) (domain.Student, error)
 	GenerateStudentKey(ctx context.Context, studentId string) (string, error)
+	ValidateStudentKey(ctx context.Context, key string) (bool, error)
 }
 
 type GroupService interface {
 	GetById(ctx context.Context, id string) (domain.Group, error)
 }
 
+type VisitService interface {
+	Create(ctx context.Context, visit domain.Visit) (domain.Visit, error)
+}
+
 type Service struct {
 	studentService StudentService
 	groupService   GroupService
+	visitService   VisitService
 }
 
-func NewService(studentService StudentService, groupService GroupService) *Service {
+func NewService(
+	studentService StudentService,
+	groupService GroupService,
+	visitService VisitService,
+) *Service {
 	return &Service{
 		studentService: studentService,
 		groupService:   groupService,
+		visitService:   visitService,
 	}
 }
 
@@ -52,6 +64,18 @@ func (s *Service) ReadQrCode(ctx context.Context, data string) (ReadQrResponse, 
 
 	if err := json.Unmarshal([]byte(decrypted), &result); err != nil {
 		return ReadQrResponse{}, fmt.Errorf("unmarshal: %w", err)
+	}
+
+	validated, err := s.studentService.ValidateStudentKey(ctx, result.Key)
+	if err != nil {
+		return ReadQrResponse{}, fmt.Errorf("validation key: %w", err)
+	}
+	if !validated {
+		return ReadQrResponse{}, fmt.Errorf("student key is invalid")
+	}
+
+	if _, err := s.visitService.Create(ctx, domain.Visit{StudentId: result.Id}); err != nil {
+		return ReadQrResponse{}, fmt.Errorf("create visit: %w", err)
 	}
 
 	return result, nil
@@ -101,4 +125,13 @@ func (s *Service) GenerateQrCode(ctx context.Context, studentId string) ([]byte,
 	}
 
 	return png, nil
+}
+
+func (s *Service) GenerateQrCodeForUser(ctx context.Context, userId string) ([]byte, error) {
+	student, err := s.studentService.GetByUserId(ctx, userId)
+	if err != nil {
+		return nil, fmt.Errorf("get student for user: %w", err)
+	}
+
+	return s.GenerateQrCode(ctx, student.Id)
 }

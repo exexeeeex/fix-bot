@@ -170,6 +170,23 @@ func (s *Service) GetById(ctx context.Context, id string) (domain.Student, error
 	return result, nil
 }
 
+func (s *Service) GetByUserId(ctx context.Context, userId string) (domain.Student, error) {
+	if userId == "" {
+		return domain.Student{}, errors.New("user_id cannot be empty")
+	}
+
+	result, err := s.repo.GetByUserId(ctx, userId)
+	if err != nil {
+		return domain.Student{}, fmt.Errorf("get student by user_id: %w", err)
+	}
+
+	if s.cache != nil {
+		_ = s.cache.Set(ctx, result.Id, result, 10)
+	}
+
+	return result, nil
+}
+
 func (s *Service) Create(ctx context.Context, student domain.Student) (domain.Student, error) {
 	student.Name = strings.TrimSpace(student.Name)
 
