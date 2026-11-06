@@ -11,6 +11,7 @@ import (
 
 type Repository interface {
 	GetById(ctx context.Context, id string) (domain.Student, error)
+	GetByUserId(ctx context.Context, userId string) (domain.Student, error)
 	GetByGroupId(ctx context.Context, groupId string) ([]domain.Student, error)
 	List(ctx context.Context, organizationId string) ([]domain.Student, error)
 	Create(ctx context.Context, student *domain.Student) error
@@ -26,6 +27,15 @@ func NewRepository(db *gorm.DB) Repository {
 
 func (r *repository) GetById(ctx context.Context, id string) (domain.Student, error) {
 	return repo.GetByID[domain.Student](ctx, r.db, id, "student")
+}
+
+func (r *repository) GetByUserId(ctx context.Context, userId string) (domain.Student, error) {
+	var student domain.Student
+	err := r.db.WithContext(ctx).Where("user_id = ?", userId).First(&student).Error
+	if err != nil {
+		return domain.Student{}, fmt.Errorf("get student by user_id: %w", err)
+	}
+	return student, nil
 }
 
 func (r *repository) GetByGroupId(ctx context.Context, groupId string) ([]domain.Student, error) {

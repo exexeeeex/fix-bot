@@ -4,29 +4,39 @@ import (
 	"net/http"
 
 	"github.com/exexeeeex/fiks-api/internal/config"
+	middlewares "github.com/exexeeeex/fiks-api/internal/config/middlewares"
 )
 
-type Handler struct {
-	service *Service
+type ProtectedRoutes interface {
+	ProtectedHandler(w http.ResponseWriter, r *http.Request, next http.HandlerFunc)
+	RoleProtectedHandler(
+		w http.ResponseWriter,
+		r *http.Request,
+		next http.HandlerFunc,
+		roles ...string,
+	) http.HandlerFunc
 }
 
-func NewHandler(service *Service) *Handler {
+type Handler struct {
+	service         *Service
+	protectedRoutes ProtectedRoutes
+}
+
+func NewHandler(
+	service *Service,
+	protectedRoutes ProtectedRoutes,
+) *Handler {
 	return &Handler{
-		service: service,
+		service:         service,
+		protectedRoutes: protectedRoutes,
 	}
 }
 
 func (h *Handler) RegisterRoutes(mux *http.ServeMux) {
-	mux.HandleFunc("POST /api/v1/qr-code/generate", h.generateQrCode)
+	mux.HandleFunc("POST /api/v1/qr-code/generate", http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		h.protectedRoutes.RoleProtectedHandler(w, r, h.generateQrCode, "student")
+	}))
 	mux.HandleFunc("POST /api/v1/qr-code/read", h.readQrCode)
-}
-
-type errorResponse struct {
-	Error string `json:"error"`
-}
-
-func writeError(w http.ResponseWriter, status int, message string) {
-	config.WriteJSON(w, status, errorResponse{Error: message})
 }
 
 func (h *Handler) readQrCode(w http.ResponseWriter, r *http.Request) {
@@ -35,18 +45,18 @@ func (h *Handler) readQrCode(w http.ResponseWriter, r *http.Request) {
 	}
 
 	if err := config.DecodeJSON(w, r, &req); err != nil {
-		writeError(w, http.StatusBadRequest, "invalid JSON: %w"+err.Error())
+		config.WriteError(w, http.StatusBadRequest, "invalid JSON: %w"+err.Error())
 		return
 	}
 
 	if req.Value == "" {
-		writeError(w, http.StatusBadRequest, "value cannot be empty")
+		config.WriteError(w, http.StatusBadRequest, "value cannot be empty")
 		return
 	}
 
 	result, err := h.service.ReadQrCode(r.Context(), req.Value)
 	if err != nil {
-		writeError(w, http.StatusInternalServerError, "read error: "+err.Error())
+		config.WriteError(w, http.StatusInternalServerError, "read error: "+err.Error())
 		return
 	}
 
@@ -54,21 +64,15 @@ func (h *Handler) readQrCode(w http.ResponseWriter, r *http.Request) {
 }
 
 func (h *Handler) generateQrCode(w http.ResponseWriter, r *http.Request) {
-	var req generateQrRequest
-
-	if err := config.DecodeJSON(w, r, &req); err != nil {
-		writeError(w, http.StatusBadRequest, "invalid JSON:"+err.Error())
+	userId := middlewares.AuthenticatedUserID(r.Context())
+	if userId == "" {
+		config.WriteError(w, http.StatusUnauthorized, "authenticated user id is missing")
 		return
 	}
 
-	if req.StudentId == "" {
-		writeError(w, http.StatusBadRequest, "student_id cannot be empty")
-		return
-	}
-
-	result, err := h.service.GenerateQrCode(r.Context(), req.StudentId)
+	result, err := h.service.GenerateQrCodeForUser(r.Context(), userId)
 	if err != nil {
-		writeError(w, http.StatusInternalServerError, err.Error())
+		config.WriteError(w, http.StatusInternalServerError, err.Error())
 		return
 	}
 
