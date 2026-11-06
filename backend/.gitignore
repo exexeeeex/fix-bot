@@ -1,6 +1,4 @@
-.env
-.env.*
-!.env.example
+
 
 bin/
 dist/
