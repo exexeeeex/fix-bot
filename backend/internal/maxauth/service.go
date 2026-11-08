@@ -40,8 +40,13 @@ type UserService interface {
 	GetByMaxId(ctx context.Context, maxId string) (domain.User, error)
 }
 
+type StaffService interface {
+	GetByUserId(ctx context.Context, userId string) (domain.Teacher, error)
+}
+
 var ErrInvalidRefreshToken = errors.New("invalid refresh token")
 var ErrRefreshTokenRequired = errors.New("refresh token is required")
+var ErrInvalidDemoRole = errors.New("demo role must be student or teacher")
 
 type Service struct {
 	testEnabled        bool
@@ -49,6 +54,7 @@ type Service struct {
 	jwtService         JwtService
 	roleService        RoleService
 	applicationService ApplicationService
+	staffService       StaffService
 }
 
 func NewService(
@@ -56,14 +62,19 @@ func NewService(
 	jwtService JwtService,
 	roleService RoleService,
 	applicationService ApplicationService,
+	staffServices ...StaffService,
 ) *Service {
-	return &Service{
+	service := &Service{
 		testEnabled:        os.Getenv("APP_ENV") == "development",
 		userService:        userService,
 		jwtService:         jwtService,
 		roleService:        roleService,
 		applicationService: applicationService,
 	}
+	if len(staffServices) > 0 {
+		service.staffService = staffServices[0]
+	}
+	return service
 }
 
 func (s *Service) Authenticate(ctx context.Context, data string) (AuthResponse, error) {
@@ -127,9 +138,18 @@ func (s *Service) Authenticate(ctx context.Context, data string) (AuthResponse, 
 		return AuthResponse{}, fmt.Errorf("get user role: %w", err)
 	}
 
-	applicationStatus, err := s.getApplicationStatus(ctx, authenticatedUser.MaxId)
+	applicationStatus, organizationId, err := s.getApplicationData(ctx, authenticatedUser.MaxId)
 	if err != nil {
 		return AuthResponse{}, fmt.Errorf("get application status: %w", err)
+	}
+	if role.Name == "admin" || role.Name == "teacher" {
+		if s.staffService != nil {
+			staff, err := s.staffService.GetByUserId(ctx, authenticatedUser.Id)
+			if err != nil {
+				return AuthResponse{}, fmt.Errorf("get staff organization: %w", err)
+			}
+			organizationId = staff.OrganizationId
+		}
 	}
 
 	tokens, err := s.jwtService.WriteTokensPair(jwt.AccessRequest{
@@ -137,6 +157,7 @@ func (s *Service) Authenticate(ctx context.Context, data string) (AuthResponse, 
 		MaxId:             authenticatedUser.MaxId,
 		ApplicationStatus: applicationStatus,
 		Role:              role.Name,
+		OrganizationId:    organizationId,
 	})
 
 	if err != nil {
@@ -154,6 +175,76 @@ func (s *Service) Authenticate(ctx context.Context, data string) (AuthResponse, 
 			Username:          user.Username,
 			LanguageCode:      user.LanguageCode,
 			PhotoURL:          user.PhotoURL,
+			Role:              role.Name,
+			OrganizationId:    organizationId,
+			ApplicationStatus: applicationStatus,
+		},
+	}, nil
+}
+
+func (s *Service) AuthenticateDemo(ctx context.Context, requestedRole string) (AuthResponse, error) {
+	var maxId, firstName, lastName string
+	switch requestedRole {
+	case "student":
+		maxId, firstName, lastName = "demo-student", "Демо", "Студент"
+	case "teacher":
+		maxId, firstName, lastName = "demo-teacher", "Демо", "Преподаватель"
+	default:
+		return AuthResponse{}, ErrInvalidDemoRole
+	}
+
+	user, err := s.userService.GetByMaxId(ctx, maxId)
+	if err != nil {
+		return AuthResponse{}, fmt.Errorf("get demo user: %w", err)
+	}
+	role, err := s.roleService.GetById(ctx, user.RoleId)
+	if err != nil {
+		return AuthResponse{}, fmt.Errorf("get demo user role: %w", err)
+	}
+	if role.Name != requestedRole {
+		return AuthResponse{}, fmt.Errorf("demo user role mismatch: got %q", role.Name)
+	}
+
+	applicationStatus, organizationId, err := s.getApplicationData(ctx, user.MaxId)
+	if err != nil {
+		return AuthResponse{}, fmt.Errorf("get demo application status: %w", err)
+	}
+	if applicationStatus != domain.ApplicationStatusApproved {
+		return AuthResponse{}, errors.New("demo application is not approved")
+	}
+	if requestedRole == "teacher" {
+		if s.staffService == nil {
+			return AuthResponse{}, errors.New("demo teacher service is not configured")
+		}
+		staff, err := s.staffService.GetByUserId(ctx, user.Id)
+		if err != nil {
+			return AuthResponse{}, fmt.Errorf("get demo teacher organization: %w", err)
+		}
+		organizationId = staff.OrganizationId
+	}
+
+	tokens, err := s.jwtService.WriteTokensPair(jwt.AccessRequest{
+		Id:                user.Id,
+		MaxId:             user.MaxId,
+		ApplicationStatus: applicationStatus,
+		Role:              role.Name,
+		OrganizationId:    organizationId,
+	})
+	if err != nil {
+		return AuthResponse{}, fmt.Errorf("write demo tokens: %w", err)
+	}
+
+	return AuthResponse{
+		Success: true,
+		Tokens:  tokens,
+		User: AuthenticatedUser{
+			Id:                user.Id,
+			MaxId:             user.MaxId,
+			FirstName:         firstName,
+			LastName:          lastName,
+			Username:          maxId,
+			Role:              role.Name,
+			OrganizationId:    organizationId,
 			ApplicationStatus: applicationStatus,
 		},
 	}, nil
@@ -195,9 +286,18 @@ func (s *Service) Refresh(ctx context.Context, refreshToken string) (jwt.TokensP
 	if err != nil {
 		return jwt.TokensPair{}, fmt.Errorf("get user role: %w", err)
 	}
-	applicationStatus, err := s.getApplicationStatus(ctx, user.MaxId)
+	applicationStatus, organizationId, err := s.getApplicationData(ctx, user.MaxId)
 	if err != nil {
 		return jwt.TokensPair{}, fmt.Errorf("get application status: %w", err)
+	}
+	if role.Name == "admin" || role.Name == "teacher" {
+		if s.staffService != nil {
+			staff, err := s.staffService.GetByUserId(ctx, user.Id)
+			if err != nil {
+				return jwt.TokensPair{}, fmt.Errorf("get staff organization: %w", err)
+			}
+			organizationId = staff.OrganizationId
+		}
 	}
 
 	tokens, err := s.jwtService.WriteTokensPair(jwt.AccessRequest{
@@ -205,6 +305,7 @@ func (s *Service) Refresh(ctx context.Context, refreshToken string) (jwt.TokensP
 		MaxId:             user.MaxId,
 		ApplicationStatus: applicationStatus,
 		Role:              role.Name,
+		OrganizationId:    organizationId,
 	})
 	if err != nil {
 		return jwt.TokensPair{}, fmt.Errorf("write refreshed tokens: %w", err)
@@ -213,14 +314,22 @@ func (s *Service) Refresh(ctx context.Context, refreshToken string) (jwt.TokensP
 }
 
 func (s *Service) getApplicationStatus(ctx context.Context, maxId string) (domain.ApplicationStatus, error) {
+	status, _, err := s.getApplicationData(ctx, maxId)
+	return status, err
+}
+
+func (s *Service) getApplicationData(
+	ctx context.Context,
+	maxId string,
+) (domain.ApplicationStatus, string, error) {
 	application, err := s.applicationService.GetByMaxId(ctx, maxId)
 	if errors.Is(err, gorm.ErrRecordNotFound) {
-		return domain.ApplicationStatusNone, nil
+		return domain.ApplicationStatusNone, "", nil
 	}
 	if err != nil {
-		return "", err
+		return "", "", err
 	}
-	return application.Status, nil
+	return application.Status, application.OrganizationId, nil
 }
 
 func (s *Service) ValidateInitData(

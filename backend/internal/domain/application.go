@@ -11,6 +11,7 @@ const (
 )
 
 const (
+	ApplicationStatusNone     ApplicationStatus = "none"
 	ApplicationStatusPending  ApplicationStatus = "pending"
 	ApplicationStatusApproved ApplicationStatus = "approved"
 	ApplicationStatusRejected ApplicationStatus = "rejected"
@@ -23,7 +24,8 @@ type Application struct {
 	Type           ApplicationType   `json:"type"`
 	UserId         string            `json:"user_id"`
 	OrganizationId string            `json:"organization_id"`
-	GroupId        string            `json:"group_id"`
+	GroupId        *string           `json:"group_id"`
+	Group          *Group            `json:"group,omitempty" gorm:"foreignKey:GroupId;references:Id"`
 	CreatedAt      time.Time         `json:"created_at"`
 	UpdatedAt      time.Time         `json:"updated_at"`
 }

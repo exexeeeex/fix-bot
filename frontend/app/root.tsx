@@ -6,10 +6,13 @@ import {
   Scripts,
   ScrollRestoration,
 } from 'react-router';
+import { Provider } from 'react-redux';
 
 import type { Route } from './+types/root';
 import './app.css';
 import { MaxUIProvider } from '../shared/providers';
+import { store } from '../shared/lib/api/store/store';
+import { useRefreshSessionTokens } from '../features/authentication/hooks';
 import '@maxhub/max-ui/dist/styles.css';
 
 export const links: Route.LinksFunction = () => [
@@ -30,13 +33,14 @@ export function Layout({ children }: { children: React.ReactNode }) {
     <html lang="ru">
       <head>
         <meta charSet="utf-8" />
-        <script src="https://st.max.ru/js/max-web-app.js"></script>
         <meta name="viewport" content="width=device-width, initial-scale=1" />
         <Meta />
         <Links />
       </head>
       <body style={{ backgroundColor: '#F4F5FA' }}>
-        <MaxUIProvider>{children}</MaxUIProvider>
+        <Provider store={store}>
+          <MaxUIProvider>{children}</MaxUIProvider>
+        </Provider>
         <ScrollRestoration />
         <Scripts />
       </body>
@@ -45,6 +49,7 @@ export function Layout({ children }: { children: React.ReactNode }) {
 }
 
 export default function App() {
+  useRefreshSessionTokens();
   return <Outlet />;
 }
 

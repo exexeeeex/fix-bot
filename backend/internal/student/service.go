@@ -187,6 +187,27 @@ func (s *Service) GetByUserId(ctx context.Context, userId string) (domain.Studen
 	return result, nil
 }
 
+func (s *Service) List(ctx context.Context, organizationId string) ([]domain.Student, error) {
+	if s.listCache != nil {
+		result, found, err := s.listCache.Get(ctx, "all"+organizationId)
+		if found && err == nil {
+			return result, nil
+		}
+	}
+
+	result, err := s.repo.List(ctx, organizationId)
+	if err != nil {
+		return []domain.Student{}, err
+	}
+
+	if s.listCache != nil {
+		_ = s.listCache.Set(ctx, "all"+organizationId, result, 10)
+	}
+
+	return result, nil
+}
+
+
 func (s *Service) Create(ctx context.Context, student domain.Student) (domain.Student, error) {
 	student.Name = strings.TrimSpace(student.Name)
 

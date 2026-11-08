@@ -359,9 +359,7 @@ export const ApplicationForm = ({ form }: { form: ReturnType<typeof useApplicati
                       <p role="alert" className="text-sm text-red-600">
                         Не удалось загрузить группы.
                       </p>
-                      <Button type="button" variant="link" onClick={() => refetchGroups()}>
-                        Повторить
-                      </Button>
+                      <Button type="button" variant="link" onClick={() => refetchGroups()}></Button>
                     </div>
                   )}
                   {selectedGroup && (

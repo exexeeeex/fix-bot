@@ -24,6 +24,10 @@ type UserCache interface {
 		user domain.User,
 		ttl int,
 	) error
+	Delete(
+		ctx context.Context,
+		key string,
+	) error
 }
 
 type UserListCache interface {
@@ -162,4 +166,42 @@ func (s *Service) Create(ctx context.Context, user domain.User) (domain.User, er
 	}
 
 	return user, nil
+}
+
+func (s *Service) Update(
+	ctx context.Context,
+	user domain.User,
+) (domain.User, error) {
+	if user.Id == "" {
+		return domain.User{}, fmt.Errorf("id cannot be empty")
+	}
+
+	if s.cache != nil {
+		_, found, err := s.cache.Get(ctx, user.Id)
+		if found && err == nil {
+			_ = s.cache.Delete(ctx, user.Id)
+		}
+	}
+
+	current, err := s.repo.GetById(ctx, user.Id)
+	if err != nil {
+		return domain.User{}, fmt.Errorf("get user by id: %w", err)
+	}
+
+	if user.MaxId != "" {
+		current.MaxId = user.MaxId
+	}
+	if user.RoleId != "" {
+		current.RoleId = user.RoleId
+	}
+
+	if err := s.repo.Update(ctx, &current); err != nil {
+		return domain.User{}, fmt.Errorf("update user^ %w", err)
+	}
+
+	if s.cache != nil {
+		_ = s.cache.Set(ctx, current.Id, current, 10)
+	}
+
+	return current, nil
 }

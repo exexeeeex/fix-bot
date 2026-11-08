@@ -1,4 +1,8 @@
-
+.env
+.env.*
+!.env.example
+!.env.dev.example
+!.env.prod.example
 
 bin/
 dist/

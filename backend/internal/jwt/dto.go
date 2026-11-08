@@ -9,6 +9,7 @@ type AccessRequest struct {
 	MaxId             string                        `json:"max_id"`
 	Role              string                        `json:"role"`
 	ApplicationStatus application.ApplicationStatus `json:"applicationStatus"`
+	OrganizationId    string                        `json:"organizationId"`
 }
 
 type RefreshRequest struct {

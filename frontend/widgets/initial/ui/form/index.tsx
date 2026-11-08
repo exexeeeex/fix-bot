@@ -1,6 +1,6 @@
 import { Controller } from 'react-hook-form';
 import { AnimatePresence, motion } from 'motion/react';
-import { Building2, Check, ChevronDown, GraduationCap, UserRound } from 'lucide-react';
+import { Building2, Check, GraduationCap, UserRound } from 'lucide-react';
 
 import { InputGroup, InputGroupInput } from '@/shared/components/ui/input-group';
 import {
@@ -11,10 +11,9 @@ import {
   SelectValue,
 } from '@/shared/components/ui/select';
 
-import type { useInitialForm } from '../../hooks';
+import type { useApplicationForm } from '@/features/application/hooks';
 import { Icon } from '@/shared/components';
 import { Button } from '@/shared/components/ui/button';
-import { getMax } from '@/shared/lib/platform/max';
 
 const organizations = [
   {
@@ -37,14 +36,12 @@ const itemVariants = {
 };
 
 const fieldClassName =
-  'w-full text-[1rem] py-5 rounded-lg border border-[#e5eaf2] bg-[#f5f7fb] px-3.5 shadow-none transition-all duration-200 hover:border-[#c8d7f5] focus-visible:border-[#3984f4] focus-visible:bg-white focus-visible:ring-[3px] focus-visible:ring-[#3984f4]/10';
+  'h-12 w-full rounded-lg border border-[#e5eaf2] bg-[#f5f7fb] px-3.5 py-0 text-base shadow-none transition-colors duration-200 hover:border-[#c8d7f5] focus-visible:border-[#3984f4] focus-visible:bg-white focus-visible:ring-[3px] focus-visible:ring-[#3984f4]/10';
 
 const iconClassName = 'size-[18px] shrink-0 text-[#7b8ba5]';
 
-export const InitialForm = ({ form }: { form: ReturnType<typeof useInitialForm> }) => {
-  const { control, register, setValue, watch, isSelected } = form;
-
-  const max = getMax();
+export const InitialForm = ({ form }: { form: ReturnType<typeof useApplicationForm> }) => {
+  const { control, register, setValue, watch, isSelected, handleSubmit, onSubmit } = form;
 
   const organizationId = watch('organizationId');
   const groupId = watch('groupId');
@@ -63,22 +60,24 @@ export const InitialForm = ({ form }: { form: ReturnType<typeof useInitialForm> 
       transition={{ duration: 0.3, ease: 'easeOut' }}
       className="mx-auto w-full max-w-110 text-left"
     >
-      <div className="overflow-hidden rounded-[28px] border border-[#e8edf5] bg-white shadow-[0_12px_48px_-20px_rgba(32,65,115,0.18)]">
-        <div className="relative overflow-hidden bg-[#3478f6] px-6 pb-7 pt-6 sm:px-7">
+      <div className="overflow-hidden rounded-2xl border border-[#e8edf5] bg-white shadow-[0_12px_48px_-20px_rgba(32,65,115,0.18)] sm:rounded-[28px]">
+        <div className="relative overflow-hidden bg-[#3478f6] px-5 pb-6 pt-5 sm:px-7 sm:pb-7 sm:pt-6">
           <div className="pointer-events-none absolute -right-12 -top-16 size-44 rounded-full bg-white/8" />
           <div className="pointer-events-none absolute -bottom-20 right-20 size-36 rounded-full bg-white/[0.07]" />
 
           <div className="relative flex items-center justify-between">
             <div className="flex items-center gap-2.5">
-              {watch('role') == 'student' ? (
+              {watch('type') === 'student' ? (
                 <>
                   <div className="flex size-10 items-center justify-center rounded-[14px] bg-white text-[#3478f6] shadow-sm">
                     <Icon icon={'graduation-cap'} size={50} className="text-[33px]" />
                   </div>
 
                   <div>
-                    <p className="text-[15px] font-bold tracking-tight text-white">Учёба</p>
-                    <p className="text-md font-medium text-white/75">Личный кабинет студента</p>
+                    <p className="text-sm font-bold tracking-tight text-white">Учёба</p>
+                    <p className="text-xs font-medium text-white/75 sm:text-sm">
+                      Личный кабинет студента
+                    </p>
                   </div>
                 </>
               ) : (
@@ -88,8 +87,8 @@ export const InitialForm = ({ form }: { form: ReturnType<typeof useInitialForm> 
                   </div>
 
                   <div>
-                    <p className="text-[15px] font-bold tracking-tight text-white">Управление</p>
-                    <p className="text-md font-medium text-white/75">
+                    <p className="text-sm font-bold tracking-tight text-white">Управление</p>
+                    <p className="text-xs font-medium text-white/75 sm:text-sm">
                       Личный кабинет преподавателя
                     </p>
                   </div>
@@ -98,20 +97,20 @@ export const InitialForm = ({ form }: { form: ReturnType<typeof useInitialForm> 
             </div>
           </div>
 
-          <div className="relative mt-7">
-            <h2 className="text-[27px] font-bold leading-tight tracking-[-0.8px] text-white">
+          <div className="relative mt-6 sm:mt-7">
+            <h2 className="text-2xl font-bold leading-tight tracking-tight text-white sm:text-[27px] sm:tracking-[-0.8px]">
               Давайте
               <br />
               знакомиться!
             </h2>
 
-            <p className="mt-2 max-w-72.5 text-[13px] leading-5 text-white/80">
+            <p className="mt-2 max-w-72.5 text-sm leading-5 text-white/80">
               Заполните данные, чтобы настроить ваш профиль.
             </p>
           </div>
         </div>
 
-        <div className="px-5 py-6 sm:px-7 sm:py-7">
+        <div className="px-4 py-5 sm:px-7 sm:py-7">
           <motion.div
             initial="hidden"
             animate="visible"
@@ -124,14 +123,14 @@ export const InitialForm = ({ form }: { form: ReturnType<typeof useInitialForm> 
                 },
               },
             }}
-            className="flex flex-col gap-5"
+            className="flex flex-col gap-4 sm:gap-5"
           >
             <motion.div variants={itemVariants} className="flex flex-col gap-2">
-              <label htmlFor="initial-name" className="text-[13px] font-semibold text-[#26344b]">
+              <label htmlFor="initial-name" className="text-sm font-semibold text-[#26344b]">
                 Как вас зовут?
               </label>
 
-              <InputGroup className="h-12 rounded-xl border border-[#e5eaf2] bg-[#f5f7fb] px-3.5 shadow-none transition-all duration-200 hover:border-[#c8d7f5] focus-within:border-[#3984f4] focus-within:bg-white focus-within:ring-[3px] focus-within:ring-[#3984f4]/10">
+              <InputGroup className="h-12 rounded-xl border border-[#e5eaf2] bg-[#f5f7fb] px-3.5 shadow-none transition-colors duration-200 hover:border-[#c8d7f5] focus-within:border-[#3984f4] focus-within:bg-white focus-within:ring-[3px] focus-within:ring-[#3984f4]/10">
                 <UserRound className={iconClassName} />
 
                 <InputGroupInput
@@ -139,17 +138,17 @@ export const InitialForm = ({ form }: { form: ReturnType<typeof useInitialForm> 
                   id="initial-name"
                   autoComplete="name"
                   placeholder="Иванов Иван Иванович"
-                  className="h-full border-0 bg-transparent px-2 text-[14px] text-[#26344b] shadow-none placeholder:text-[#9aa7ba] focus-visible:ring-0"
+                  className="h-full border-0 bg-transparent px-2 text-base text-[#26344b] shadow-none placeholder:text-[#9aa7ba] focus-visible:ring-0"
                 />
               </InputGroup>
 
-              <p className="text-[11px] leading-4 text-[#8b98ad]">
+              <p className="text-xs leading-4 text-[#66758c]">
                 Укажите фамилию, имя и отчество полностью.
               </p>
             </motion.div>
 
             <motion.div variants={itemVariants} className="flex flex-col gap-2">
-              <label id="organization-label" className="text-[13px] font-semibold text-[#26344b]">
+              <label id="organization-label" className="text-sm font-semibold text-[#26344b]">
                 Где вы учитесь?
               </label>
 
@@ -195,7 +194,7 @@ export const InitialForm = ({ form }: { form: ReturnType<typeof useInitialForm> 
                 <motion.div
                   initial={{ opacity: 0, height: 0 }}
                   animate={{ opacity: 1, height: 'auto' }}
-                  className="flex items-center gap-1.5 overflow-hidden px-0.5 text-[11px] text-[#3478f6]"
+                  className="flex items-center gap-1.5 overflow-hidden px-0.5 text-xs text-[#3478f6]"
                 >
                   <Check className="size-3.5 shrink-0" />
                   <span className="truncate">{selectedOrganization.name}</span>
@@ -204,7 +203,7 @@ export const InitialForm = ({ form }: { form: ReturnType<typeof useInitialForm> 
             </motion.div>
 
             <motion.div variants={itemVariants} className="flex flex-col gap-2">
-              <label id="group-label" className="text-[13px] font-semibold text-[#26344b]">
+              <label id="group-label" className="text-sm font-semibold text-[#26344b]">
                 Ваша группа
               </label>
               <Controller
@@ -225,9 +224,7 @@ export const InitialForm = ({ form }: { form: ReturnType<typeof useInitialForm> 
 
                         <SelectValue
                           placeholder={
-                            organizationId
-                              ? 'Выберите учебную группу'
-                              : 'Сначала выберите организацию'
+                            organizationId ? 'Выберите учебную группу' : 'Выберите организацию'
                           }
                         />
                       </div>
@@ -251,11 +248,10 @@ export const InitialForm = ({ form }: { form: ReturnType<typeof useInitialForm> 
                 <motion.div
                   initial={{ opacity: 0, height: 0 }}
                   animate={{ opacity: 1, height: 'auto' }}
-                  className="flex items-center gap-1.5 overflow-hidden px-0.5 text-[11px] text-[#3478f6]"
+                  className="flex items-center gap-1.5 overflow-hidden px-0.5 text-xs text-[#3478f6]"
                 >
                   <Check className="size-3.5 shrink-0" />
                   <span>Группа {selectedGroup.name} выбрана</span>
-                  <span>{max.initData}</span>
                 </motion.div>
               )}
               <AnimatePresence mode="wait">
@@ -267,7 +263,13 @@ export const InitialForm = ({ form }: { form: ReturnType<typeof useInitialForm> 
                     exit={{ opacity: 0 }}
                     transition={{ duration: 0.3 }}
                   >
-                    <Button className="w-full h-10 text-lg">Отправить заявку</Button>
+                    <Button
+                      type="button"
+                      className="h-12 w-full text-base"
+                      onClick={handleSubmit(onSubmit)}
+                    >
+                      Отправить заявку
+                    </Button>
                   </motion.div>
                 )}
               </AnimatePresence>
