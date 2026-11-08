@@ -1,0 +1,44 @@
+Requirements for the Fix project
+================================
+
+This project does not use Python. This file documents the tools and services
+required to develop and run it; do not install it with pip.
+
+Development
+-----------
+- Docker Engine with Docker Compose v2
+- Go 1.27.0 or a compatible newer version (backend/go.mod)
+- Node.js 24.x
+- Corepack and Yarn (use the version specified by the frontend lockfile)
+- migrate CLI v4.18.3 (only when applying database migrations manually)
+- PostgreSQL 17
+- Redis 7
+
+The backend and frontend dependencies are managed by Go modules and Yarn:
+- Backend: backend/go.mod and backend/go.sum
+- Frontend: frontend/package.json and frontend/yarn.lock
+
+Development configuration
+-------------------------
+- backend/.env.dev, with APP_ENV=development, DATABASE_URL, Redis connection
+  settings, and any required authentication secrets.
+- MAX_BOT_TOKEN is required to use MAX authentication.
+- frontend/.env is optional; VITE_API_BASE_URL can override the default
+  development API URL (http://localhost:8080/api/v1/).
+- PostgreSQL and Redis must be reachable at the addresses configured for the
+  backend. backend/compose.yaml provides local PostgreSQL and Redis services.
+
+Production
+----------
+- Docker Engine with Docker Compose v2
+- A configured .environments/prod.env containing PostgreSQL and Redis
+  credentials, the backend DATABASE_URL and service addresses, and required
+  application secrets.
+- TLS certificate files for Nginx:
+  nginx/certs/fullchain.pem
+  nginx/certs/privkey.pem
+
+The production Compose file supplies PostgreSQL 17, Redis 7, and the
+migrate/migrate:v4.18.3 migration image. Frontend and backend images can be
+built from source or replaced with the published Docker Hub images listed in
+README.md.
