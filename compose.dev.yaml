@@ -1,30 +1,94 @@
 services:
   postgres:
+    image: postgres:17-alpine
+    environment:
+      POSTGRES_DB: fiks
+      POSTGRES_USER: fiks
+      POSTGRES_PASSWORD: local_dev_pass
     ports:
-      - "5432:5432"
+      - '5432:5432'
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ['CMD-SHELL', 'pg_isready -U fiks -d fiks']
+      interval: 10s
+      timeout: 3s
+      retries: 10
 
   redis:
+    image: redis:7-alpine
+    command: ['redis-server', '--appendonly', 'yes']
     ports:
-      - "6379:6379"
+      - '6379:6379'
+    volumes:
+      - redis_data:/data
+    healthcheck:
+      test: ['CMD', 'redis-cli', 'ping']
+      interval: 10s
+      timeout: 3s
+      retries: 10
+
+  migrate:
+    image: migrate/migrate:v4.18.3
+    entrypoint: ['/bin/sh', '-c']
+    command:
+      - 'exec migrate -path /migrations -database "postgres://fiks:local_dev_pass@postgres:5432/fiks?sslmode=disable" up'
+    volumes:
+      - ./backend/migrations:/migrations:ro
+    depends_on:
+      postgres:
+        condition: service_healthy
+    restart: 'no'
 
   backend:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile
+      target: build
+    command: ['go', 'run', './cmd/api']
+    working_dir: /src
+    env_file:
+      - ./backend/.env.dev
     environment:
       APP_ENV: development
-    ports:
-      - "8080:8080"
+      APP_PORT: '8080'
+      DATABASE_URL: postgres://fiks:local_dev_pass@postgres:5432/fiks?sslmode=disable
+      REDIS_ADDR: redis:6379
+      REDIS_PASSWORD: ''
+      REDIS_DB: '0'
+    volumes:
+      - ./backend:/src
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+      migrate:
+        condition: service_completed_successfully
 
   frontend:
     build:
+      context: ./frontend
+      dockerfile: Dockerfile
       target: development-dependencies-env
-    command: ["npm", "run", "dev", "--", "--host", "0.0.0.0", "--port", "3000"]
-    environment:
-      VITE_API_BASE_URL: http://localhost:3000/api/
+    command: ['yarn', 'dev', '--host', '0.0.0.0']
     volumes:
       - ./frontend:/app
-      - /app/node_modules
+      - frontend_node_modules:/app/node_modules
+    expose:
+      - '3000'
 
   nginx:
-    ports: !override
-      - "3000:80"
+    image: nginx:1.27-alpine
+    ports:
+      - '${DEV_HTTP_PORT:-8080}:80'
     volumes:
       - ./nginx/dev.conf:/etc/nginx/conf.d/default.conf:ro
+    depends_on:
+      - frontend
+      - backend
+
+volumes:
+  postgres_data:
+  redis_data:
+  frontend_node_modules:
