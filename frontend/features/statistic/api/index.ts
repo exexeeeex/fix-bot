@@ -1,0 +1,1 @@
+export { useGetAbcensesQuery } from './statistic';

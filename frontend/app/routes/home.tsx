@@ -1,10 +1,10 @@
-import type { Route } from "../+types/root";
-import { Home } from "@/widgets/home";
+import type { Route } from '../+types/root';
+import { Home } from '@/widgets/home';
 
-export function meta({}: Route.MetaArgs) {
+export function meta(_args: Route.MetaArgs) {
   return [
-    { title: "Сфера — пропуск" },
-    { name: "description", content: "Электронный пропуск студента" },
+    { title: 'Фикс пропуск' },
+    { name: 'description', content: 'Электронный пропуск студента' },
   ];
 }
 

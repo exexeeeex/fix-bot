@@ -27,7 +27,9 @@ const ApplicationsPage = () => {
   return (
     <main className="mx-auto min-h-screen w-full max-w-5xl px-4 py-8 pb-24 sm:px-6">
       <header className="mb-6">
-        <h1 className="text-2xl font-semibold tracking-tight sm:text-3xl">Заявки</h1>
+        <h1 className="text-2xl font-semibold text-foreground tracking-tight sm:text-3xl">
+          Заявки
+        </h1>
         <p className="mt-2 text-sm text-muted-foreground">
           Просматривайте заявки вашей организации и фильтруйте их по группам.
         </p>
@@ -38,17 +40,26 @@ const ApplicationsPage = () => {
         className="mb-6 rounded-xl border border-border bg-card p-4"
       >
         <div className="grid max-w-md gap-2">
-          <label htmlFor="application-group" className="text-sm font-medium">
+          <label htmlFor="application-group" className="text-sm text-foreground font-medium">
             Группа
           </label>
           <Select value={groupId} onValueChange={selectGroup} disabled={groupOptions.length === 0}>
-            <SelectTrigger id="application-group" className="w-full">
-              <SelectValue placeholder="Все группы" />
+            <SelectTrigger id="application-group" className="w-full text-foreground">
+              <SelectValue className="text-foreground" placeholder="Все группы" />
             </SelectTrigger>
             <SelectContent>
-              <SelectItem value={ALL_GROUPS}>Все группы</SelectItem>
+              <SelectItem
+                className="focus:bg-primary focus:text-fuchsia-50 hover:bg-accent"
+                value={ALL_GROUPS}
+              >
+                Все группы
+              </SelectItem>
               {groupOptions.map((group) => (
-                <SelectItem key={group.id} value={group.id}>
+                <SelectItem
+                  className="focus:bg-primary hover:text-fuchsia-50 hover:bg-accent"
+                  key={group.id}
+                  value={group.id}
+                >
                   {group.name}
                 </SelectItem>
               ))}
@@ -60,7 +71,12 @@ const ApplicationsPage = () => {
       {isGroupsError && pageState === 'content' && (
         <div className="mb-4 flex flex-wrap items-center justify-between gap-3 rounded-lg border border-amber-300 bg-amber-50 p-4 text-sm text-amber-900">
           <p>Не удалось загрузить список групп. Используются группы из заявок.</p>
-          <Button type="button" variant="outline" onClick={() => void retryGroups()}>
+          <Button
+            className="text-foreground"
+            type="button"
+            variant="outline"
+            onClick={() => void retryGroups()}
+          >
             Повторить
           </Button>
         </div>
@@ -85,7 +101,7 @@ const ApplicationsPage = () => {
           {visibleGroups.map((group) => (
             <section key={group.id} aria-labelledby={`group-${group.id}`}>
               <div className="mb-3 flex items-baseline justify-between gap-2">
-                <h2 id={`group-${group.id}`} className="text-base font-semibold">
+                <h2 id={`group-${group.id}`} className="text-base text-foreground font-semibold">
                   {group.name}
                 </h2>
               </div>
