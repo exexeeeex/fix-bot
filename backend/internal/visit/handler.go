@@ -1,10 +1,17 @@
 package visit
 
 import (
+	"context"
 	"net/http"
 
 	"github.com/exexeeeex/fiks-api/internal/config"
+	configmiddleware "github.com/exexeeeex/fiks-api/internal/config/middlewares"
+	"github.com/exexeeeex/fiks-api/internal/domain"
 )
+
+type GroupService interface {
+	GetById(ctx context.Context, id string) (domain.Group, error)
+}
 
 type ProtectedRoutes interface {
 	ProtectedHandler(w http.ResponseWriter, r *http.Request, next http.HandlerFunc)
@@ -19,15 +26,18 @@ type ProtectedRoutes interface {
 type Handler struct {
 	service         *Service
 	protectedRoutes ProtectedRoutes
+	groupService    GroupService
 }
 
 func NewHandler(
 	service *Service,
 	protectedRoutes ProtectedRoutes,
+	groupService GroupService,
 ) *Handler {
 	return &Handler{
 		service:         service,
 		protectedRoutes: protectedRoutes,
+		groupService:    groupService,
 	}
 }
 
@@ -50,6 +60,15 @@ func (h *Handler) getVisitsByOrganizationId(
 		config.WriteError(w, http.StatusBadRequest, "invalid organization id")
 		return
 	}
+	authenticatedOrganizationID := configmiddleware.AuthenticatedOrganizationID(r.Context())
+	if authenticatedOrganizationID == "" {
+		config.WriteError(w, http.StatusUnauthorized, "organization scope is missing")
+		return
+	}
+	if organizationId != authenticatedOrganizationID {
+		config.WriteError(w, http.StatusForbidden, "forbidden: organization access denied")
+		return
+	}
 
 	result, err := h.service.ListByOrganizationId(r.Context(), organizationId)
 	if err != nil {
@@ -68,6 +87,20 @@ func (h *Handler) getVisitsByGroupId(
 
 	if groupId == "" {
 		config.WriteError(w, http.StatusBadRequest, "invalid group id")
+		return
+	}
+	organizationID := configmiddleware.AuthenticatedOrganizationID(r.Context())
+	if organizationID == "" {
+		config.WriteError(w, http.StatusUnauthorized, "organization scope is missing")
+		return
+	}
+	group, err := h.groupService.GetById(r.Context(), groupId)
+	if err != nil {
+		config.WriteError(w, http.StatusNotFound, "group not found")
+		return
+	}
+	if group.OrganizationId != organizationID {
+		config.WriteError(w, http.StatusForbidden, "forbidden: organization access denied")
 		return
 	}
 

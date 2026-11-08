@@ -27,10 +27,33 @@ func NewHandler(
 func (h *Handler) RegisterRoutes(mux *http.ServeMux) {
 	mux.HandleFunc("POST /api/v1/auth/max", h.authenticate)
 	mux.HandleFunc("POST /api/v1/auth/max/refresh", h.refresh)
+	mux.HandleFunc("POST /api/v1/auth/demo", h.demoAuthenticate)
 	if h.testEnabled {
 		mux.HandleFunc("POST /api/v1/auth/max/test", h.testAuthenticate)
 		mux.HandleFunc("GET /api/v1/auth/max/test-data", h.testData)
 	}
+}
+
+func (h *Handler) demoAuthenticate(w http.ResponseWriter, r *http.Request) {
+	var req struct {
+		Role string `json:"role"`
+	}
+	if err := config.DecodeJSON(w, r, &req); err != nil {
+		config.WriteError(w, http.StatusBadRequest, "invalid JSON: "+err.Error())
+		return
+	}
+
+	response, err := h.service.AuthenticateDemo(r.Context(), req.Role)
+	if errors.Is(err, ErrInvalidDemoRole) {
+		config.WriteError(w, http.StatusBadRequest, err.Error())
+		return
+	}
+	if err != nil {
+		config.WriteError(w, http.StatusInternalServerError, "failed to authenticate demo user: "+err.Error())
+		return
+	}
+
+	config.WriteJSON(w, http.StatusOK, response)
 }
 
 func (h *Handler) refresh(w http.ResponseWriter, r *http.Request) {

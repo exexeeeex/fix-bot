@@ -57,7 +57,7 @@ func (r *repository) List(ctx context.Context, organizationId string) ([]domain.
 
 	err := r.db.WithContext(ctx).
 		Model(&domain.Student{}).
-		Joins("JOIN groups ON groups.id = student.group.id").
+		Joins("JOIN groups ON groups.id = students.group_id").
 		Where("groups.organization_id = ?", organizationId).
 		Find(&students).
 		Error

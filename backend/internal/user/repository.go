@@ -15,6 +15,7 @@ type Repository interface {
 	GetByMaxId(ctx context.Context, maxId string) (domain.User, error)
 	List(ctx context.Context, organizationId string) ([]domain.User, error)
 	Create(ctx context.Context, user *domain.User) error
+	Update(ctx context.Context, user *domain.User) error
 }
 
 type repository struct {
@@ -66,4 +67,16 @@ func (r *repository) List(ctx context.Context, organizationId string) ([]domain.
 		return nil, err
 	}
 	return users, nil
+}
+
+// Update implements [Repository].
+func (r *repository) Update(ctx context.Context, user *domain.User) error {
+	err := r.db.WithContext(ctx).
+		Save(user).
+		Error
+	if err != nil {
+		return fmt.Errorf("update user: %w", err)
+	}
+
+	return nil
 }

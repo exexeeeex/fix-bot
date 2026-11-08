@@ -1,54 +1,49 @@
-import { useState } from 'react';
-import { useForm } from 'react-hook-form';
-import { yupResolver } from '@hookform/resolvers/yup';
-import * as yup from 'yup';
+import { useCallback, useEffect, useState } from 'react';
+import { useNavigate } from 'react-router';
+import type { AuthenticationResponse } from '@/features/authentication/types';
+import { useLogin } from '@/features/authentication/hooks';
 
-type InitialForm = {
-  role: string;
-  name: string;
-  organizationId: string;
-  groupId: string;
-};
+type ApplicationStatus = AuthenticationResponse['user']['applicationStatus'];
+type InitialStatus = Exclude<ApplicationStatus, 'approved'> | 'loading' | 'error';
 
 export const useInitialForm = () => {
-  const [isVisibleForm, setIsVisibleForm] = useState<boolean>(false);
+  const { login } = useLogin();
+  const navigate = useNavigate();
+  const [userId, setUserId] = useState('');
+  const [name, setName] = useState<string>('');
+  const [status, setStatus] = useState<InitialStatus>('loading');
 
-  const schema = yup.object({
-    role: yup.string().required('Выберите свою роль!'),
-    name: yup.string().min(10).max(50).required('Укажите полное ФИО!'),
-    organizationId: yup.string().required('Организация не выбрана!'),
-    groupId: yup.string().required('Группа не выбрана!'),
-  });
+  const authenticate = useCallback(async () => {
+    setStatus('loading');
 
-  const { control, watch, setValue, register } = useForm<InitialForm>({
-    resolver: yupResolver(schema),
+    try {
+      const response = await login();
+      if (!response.success) {
+        throw new Error('Authentication was not successful');
+      }
 
-    defaultValues: {
-      role: '',
-      name: '',
-      organizationId: '',
-      groupId: '',
-    },
-  });
+      setUserId(response.user.id);
+      setName(`${response.user.first_name} ${response.user.last_name}`);
+      if (response.user.applicationStatus === 'approved') {
+        navigate('/home', { replace: true });
+        return;
+      }
 
-  const selectRole = (role: string) => {
-    setValue('role', role, { shouldDirty: true, shouldValidate: true });
-    setIsVisibleForm(true);
-  };
+      setStatus(response.user.applicationStatus);
+    } catch (error: unknown) {
+      console.error('Failed to check application status', error);
+      setStatus('error');
+    }
+  }, [login, navigate]);
 
-  const isSelected =
-    watch('groupId').length > 5 &&
-    watch('name').length >= 10 &&
-    watch('organizationId').length > 5 &&
-    watch('role').length > 5;
+  useEffect(() => {
+    void authenticate();
+  }, [authenticate]);
 
   return {
-    control,
-    watch,
-    register,
-    setValue,
-    selectRole,
-    isVisibleForm,
-    isSelected,
+    userId,
+    name,
+    status,
+    retryAuthentication: authenticate,
   };
 };

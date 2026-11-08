@@ -1,14 +1,12 @@
 package jwt
 
 import (
+	"fmt"
 	"os"
 	"time"
 
 	"github.com/golang-jwt/jwt/v5"
 )
-
-var accessSecret = []byte(os.Getenv("JWT_ACCESS_SECRET_KEY"))
-var refreshSecret = []byte(os.Getenv("JWT_REFRESH_SECRET_KEY"))
 
 type Service struct{}
 
@@ -41,9 +39,14 @@ func (s *Service) ValidateToken(tokenString string, tokenType string) (*jwt.Toke
 
 	switch tokenType {
 	case "access":
-		secret = accessSecret
+		secret = []byte(os.Getenv("JWT_ACCESS_SECRET_KEY"))
 	case "refresh":
-		secret = refreshSecret
+		secret = []byte(os.Getenv("JWT_REFRESH_SECRET_KEY"))
+	default:
+		return nil, fmt.Errorf("unsupported token type %q", tokenType)
+	}
+	if len(secret) == 0 {
+		return nil, fmt.Errorf("%s is not set", secretEnvironmentKey(tokenType))
 	}
 
 	token, err := jwt.Parse(tokenString, func(token *jwt.Token) (interface{}, error) {
@@ -62,25 +65,63 @@ func (s *Service) ValidateToken(tokenString string, tokenType string) (*jwt.Toke
 }
 
 func (s *Service) WriteAccessToken(request AccessRequest) (string, error) {
+	secret := []byte(os.Getenv("JWT_ACCESS_SECRET_KEY"))
+	if len(secret) == 0 {
+		return "", fmt.Errorf("JWT_ACCESS_SECRET_KEY is not set")
+	}
+	expiration, err := tokenExpiration("JWT_ACCESS_EXP", 10*time.Minute)
+	if err != nil {
+		return "", err
+	}
+
 	token := jwt.NewWithClaims(jwt.SigningMethodHS256,
 		jwt.MapClaims{
 			"maxId":             request.MaxId,
 			"id":                request.Id,
 			"role":              request.Role,
 			"applicationStatus": request.ApplicationStatus,
-			"exp":               time.Now().Add(time.Duration(10) * time.Minute).Unix(),
+			"organizationId":    request.OrganizationId,
+			"exp":               time.Now().Add(expiration).Unix(),
 		})
 
-	return token.SignedString(accessSecret)
+	return token.SignedString(secret)
 }
 
 func (s *Service) WriteRefreshToken(request RefreshRequest) (string, error) {
+	secret := []byte(os.Getenv("JWT_REFRESH_SECRET_KEY"))
+	if len(secret) == 0 {
+		return "", fmt.Errorf("JWT_REFRESH_SECRET_KEY is not set")
+	}
+	expiration, err := tokenExpiration("JWT_REFRESH_EXP", 5*24*time.Hour)
+	if err != nil {
+		return "", err
+	}
+
 	token := jwt.NewWithClaims(jwt.SigningMethodHS256,
 		jwt.MapClaims{
 			"maxId": request.MaxId,
 			"id":    request.Id,
-			"exp":   time.Now().Add(5 * 24 * time.Hour).Unix(),
+			"exp":   time.Now().Add(expiration).Unix(),
 		})
 
-	return token.SignedString(refreshSecret)
+	return token.SignedString(secret)
+}
+
+func tokenExpiration(key string, fallback time.Duration) (time.Duration, error) {
+	value := os.Getenv(key)
+	if value == "" {
+		return fallback, nil
+	}
+	expiration, err := time.ParseDuration(value)
+	if err != nil || expiration <= 0 {
+		return 0, fmt.Errorf("invalid %s: expected a positive Go duration", key)
+	}
+	return expiration, nil
+}
+
+func secretEnvironmentKey(tokenType string) string {
+	if tokenType == "access" {
+		return "JWT_ACCESS_SECRET_KEY"
+	}
+	return "JWT_REFRESH_SECRET_KEY"
 }

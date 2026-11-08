@@ -1,8 +1,23 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { useZxing } from 'react-zxing';
 
-const getErrorMessage = (error: unknown) =>
-  error instanceof Error ? error.message : 'Неизвестная ошибка';
+const getErrorMessage = (error: unknown) => {
+  if (!(error instanceof Error)) return 'Неизвестная ошибка';
+
+  if (['NotAllowedError', 'PermissionDeniedError', 'SecurityError'].includes(error.name)) {
+    return 'Браузер или устройство заблокировали камеру. Разрешите доступ к камере для этого сайта в настройках браузера и устройства. Если приложение открыто во встроенном браузере MAX, проверьте разрешение MAX на камеру.';
+  }
+
+  if (['NotFoundError', 'DevicesNotFoundError'].includes(error.name)) {
+    return 'Камера не найдена. Проверьте, что устройство подключено и доступно.';
+  }
+
+  if (['NotReadableError', 'TrackStartError'].includes(error.name)) {
+    return 'Камера уже используется другим приложением или недоступна. Закройте другие приложения, использующие камеру, и попробуйте снова.';
+  }
+
+  return error.message;
+};
 
 export const useScannerCamera = (onDecoded: (value: string) => void) => {
   const [isCameraActive, setIsCameraActive] = useState(false);
@@ -29,22 +44,23 @@ export const useScannerCamera = (onDecoded: (value: string) => void) => {
   }, []);
 
   const handleCameraError = useCallback((cause: unknown) => {
-    console.error('Failed to start QR scanner camera', cause);
+    console.error('Failed to start QR scanner camera', {
+      name: cause instanceof Error ? cause.name : undefined,
+      cause,
+    });
     isCameraActiveRef.current = false;
     isStartingRef.current = false;
     setIsCameraActive(false);
     setIsStarting(false);
     setIsScanning(false);
-    setError(
-      `Не удалось получить доступ к камере (${getErrorMessage(cause)}). Разрешите доступ к камере и попробуйте снова.`
-    );
+    setError(`Не удалось получить доступ к камере: ${getErrorMessage(cause)}`);
   }, []);
 
   const { ref: videoRef } = useZxing({
     paused: !isCameraActive,
     constraints: {
       audio: false,
-      video: { facingMode: 'environment' },
+      video: { facingMode: { ideal: 'environment' } },
     },
     formats: ['qr_code'],
     timeBetweenDecodingAttempts: 200,

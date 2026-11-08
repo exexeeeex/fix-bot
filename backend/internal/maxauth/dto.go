@@ -22,6 +22,8 @@ type AuthenticatedUser struct {
 	Username          string                   `json:"username"`
 	LanguageCode      *string                  `json:"language_code"`
 	PhotoURL          *string                  `json:"photo_url"`
+	Role              string                   `json:"role"`
+	OrganizationId    string                   `json:"organization_id"`
 	ApplicationStatus domain.ApplicationStatus `json:"applicationStatus"`
 }
 

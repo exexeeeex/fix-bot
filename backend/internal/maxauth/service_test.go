@@ -18,14 +18,24 @@ type testApplicationService struct {
 	requested   string
 }
 
+type testStaffService struct {
+	teacher domain.Teacher
+	err     error
+}
+
+func (s *testStaffService) GetByUserId(context.Context, string) (domain.Teacher, error) {
+	return s.teacher, s.err
+}
+
 func (s *testApplicationService) GetByMaxId(_ context.Context, maxId string) (domain.Application, error) {
 	s.requested = maxId
 	return s.application, s.err
 }
 
 type testUserService struct {
-	user  domain.User
-	input domain.User
+	user           domain.User
+	input          domain.User
+	requestedMaxID string
 }
 
 func (s *testUserService) Create(_ context.Context, user domain.User) (domain.User, error) {
@@ -33,7 +43,8 @@ func (s *testUserService) Create(_ context.Context, user domain.User) (domain.Us
 	return s.user, nil
 }
 
-func (s *testUserService) GetByMaxId(_ context.Context, _ string) (domain.User, error) {
+func (s *testUserService) GetByMaxId(_ context.Context, maxId string) (domain.User, error) {
+	s.requestedMaxID = maxId
 	return s.user, nil
 }
 
@@ -74,6 +85,7 @@ func TestAuthenticateUsesUserReturnedByMaxIDLookup(t *testing.T) {
 		t.Fatal(err)
 	}
 
+	groupId := "group-id"
 	applicationService := &testApplicationService{
 		application: domain.Application{
 			Id:             "application-id",
@@ -81,7 +93,7 @@ func TestAuthenticateUsesUserReturnedByMaxIDLookup(t *testing.T) {
 			Status:         domain.ApplicationStatusPending,
 			Type:           domain.ApplicationTypeStudent,
 			OrganizationId: "organization-id",
-			GroupId:        "group-id",
+			GroupId:        &groupId,
 		},
 	}
 
@@ -96,7 +108,10 @@ func TestAuthenticateUsesUserReturnedByMaxIDLookup(t *testing.T) {
 	roleService := &testRoleService{
 		role: domain.Role{Id: "admin-role-id", Name: "admin"},
 	}
-	service := NewService(userService, jwtService, roleService, applicationService)
+	staffService := &testStaffService{
+		teacher: domain.Teacher{OrganizationId: "staff-organization-id"},
+	}
+	service := NewService(userService, jwtService, roleService, applicationService, staffService)
 
 	response, err := service.Authenticate(context.Background(), initData)
 	if err != nil {
@@ -126,6 +141,14 @@ func TestAuthenticateUsesUserReturnedByMaxIDLookup(t *testing.T) {
 	}
 	if response.User.MaxId != userService.user.MaxId {
 		t.Errorf("response max_id = %q, want %q", response.User.MaxId, userService.user.MaxId)
+	}
+	if response.User.OrganizationId != staffService.teacher.OrganizationId {
+		t.Errorf("response organization_id = %q, want %q",
+			response.User.OrganizationId, staffService.teacher.OrganizationId)
+	}
+	if jwtService.request.OrganizationId != staffService.teacher.OrganizationId {
+		t.Errorf("token organization_id = %q, want %q",
+			jwtService.request.OrganizationId, staffService.teacher.OrganizationId)
 	}
 	if jwtService.request.ApplicationStatus != domain.ApplicationStatusPending ||
 		response.User.ApplicationStatus != domain.ApplicationStatusPending {
@@ -194,6 +217,50 @@ func TestAuthenticateReturnsApplicationLookupErrors(t *testing.T) {
 
 	if _, err := service.Authenticate(context.Background(), initData); err == nil {
 		t.Fatal("Authenticate() error = nil, want application lookup error")
+	}
+}
+
+func TestAuthenticateDemoUsesOnlyConfiguredDemoRole(t *testing.T) {
+	userService := &testUserService{
+		user: domain.User{Id: "demo-teacher-id", MaxId: "demo-teacher", RoleId: "teacher-role-id"},
+	}
+	jwtService := &testJwtService{}
+	roleService := &testRoleService{
+		role: domain.Role{Id: "teacher-role-id", Name: "teacher"},
+	}
+	applicationService := &testApplicationService{
+		application: domain.Application{
+			Status:         domain.ApplicationStatusApproved,
+			OrganizationId: "demo-organization-id",
+		},
+	}
+	staffService := &testStaffService{
+		teacher: domain.Teacher{OrganizationId: "demo-organization-id"},
+	}
+	service := NewService(userService, jwtService, roleService, applicationService, staffService)
+
+	response, err := service.AuthenticateDemo(context.Background(), "teacher")
+	if err != nil {
+		t.Fatalf("AuthenticateDemo() error = %v, want nil", err)
+	}
+	if userService.requestedMaxID != "demo-teacher" {
+		t.Errorf("demo user max id = %q, want %q", userService.requestedMaxID, "demo-teacher")
+	}
+	if !response.Success || response.User.Role != "teacher" ||
+		response.User.ApplicationStatus != domain.ApplicationStatusApproved {
+		t.Errorf("unexpected demo authentication response: %+v", response)
+	}
+	if jwtService.request.Role != "teacher" ||
+		jwtService.request.OrganizationId != "demo-organization-id" {
+		t.Errorf("unexpected demo token request: %+v", jwtService.request)
+	}
+}
+
+func TestAuthenticateDemoRejectsOtherRoles(t *testing.T) {
+	service := NewService(nil, nil, nil, nil)
+
+	if _, err := service.AuthenticateDemo(context.Background(), "admin"); !errors.Is(err, ErrInvalidDemoRole) {
+		t.Errorf("AuthenticateDemo() error = %v, want ErrInvalidDemoRole", err)
 	}
 }
 

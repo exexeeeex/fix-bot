@@ -1,1 +1,1 @@
-export { type UserRole } from './user-role.type'
+export { isUserRole, type UserRole } from './user-role.type';

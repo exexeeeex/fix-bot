@@ -1,6 +1,7 @@
 package config
 
 import (
+	"errors"
 	"fmt"
 	"os"
 	"strconv"
@@ -13,11 +14,19 @@ type Config struct {
 	DatabaseURL   string
 	RedisAddr     string
 	RedisPassword string
+	MaxBotToken   string
 	RedisDB       int
 }
 
 func Load() (Config, error) {
-	_ = godotenv.Load()
+	appEnv := getEnv("APP_ENV", "development")
+	envFile, err := envFileFor(appEnv)
+	if err != nil {
+		return Config{}, err
+	}
+	if err := godotenv.Load(envFile); err != nil && !errors.Is(err, os.ErrNotExist) {
+		return Config{}, fmt.Errorf("load environment file %s: %w", envFile, err)
+	}
 
 	redisDB, err := strconv.Atoi(getEnv("REDIS_DB", "0"))
 
@@ -30,6 +39,7 @@ func Load() (Config, error) {
 		DatabaseURL:   os.Getenv("DATABASE_URL"),
 		RedisAddr:     getEnv("REDIS_ADDR", "localhost:6379"),
 		RedisPassword: getEnv("REDIS_PASSWORD", ""),
+		MaxBotToken:   getEnv("MAX_BOT_TOKEN", ""),
 		RedisDB:       redisDB,
 	}
 
@@ -38,6 +48,17 @@ func Load() (Config, error) {
 	}
 
 	return cfg, nil
+}
+
+func envFileFor(appEnv string) (string, error) {
+	switch appEnv {
+	case "development", "dev":
+		return ".env.dev", nil
+	case "production", "prod":
+		return ".env.prod", nil
+	default:
+		return "", fmt.Errorf("unsupported APP_ENV %q: expected development or production", appEnv)
+	}
 }
 
 func getEnv(key, fallback string) string {
