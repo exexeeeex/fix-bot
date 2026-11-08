@@ -30,43 +30,21 @@ Production-команда Docker Compose из этого README собирает
 
 ## Локальный запуск для разработки
 
-Требования к инструментам, сервисам и настройкам окружения перечислены в [requirements.txt](requirements.txt). Нужны Docker Compose, Go версии из `backend/go.mod`, Node.js и Yarn.
+Требования к инструментам и настройкам окружения перечислены в [requirements.txt](requirements.txt). Для запуска нужен Docker Compose и заполненный `backend/.env.dev`; укажите в нём необходимые секреты, например `MAX_BOT_TOKEN`. Compose сам задаст адреса PostgreSQL и Redis внутри сети контейнеров и применит миграции.
 
-1. Запустите PostgreSQL и Redis из корня проекта:
+Запустите весь стек из корня проекта одной командой:
 
-    ```powershell
-    docker compose -f backend/compose.yaml up -d
-    ```
+```powershell
+docker compose -f compose.dev.yaml up --build
+```
 
-2. Убедитесь, что в `backend/.env.dev` настроено подключение к локальным сервисам. Backend читает этот файл при `APP_ENV=development`; обязательны `DATABASE_URL` и доступ к Redis. `MAX_BOT_TOKEN` нужен для проверки авторизации через MAX.
+Приложение будет доступно по адресу `http://localhost:8080`; API проксируется через Nginx. Чтобы изменить порт Nginx, задайте `DEV_HTTP_PORT`. Исходники frontend и backend подключены в контейнеры, frontend поддерживает hot reload. PostgreSQL и Redis также доступны с хоста на портах `5432` и `6379`.
 
-3. Примените миграции из папки `backend`. Для этого нужна установленная утилита `migrate`:
+Остановить стек можно командой:
 
-    ```powershell
-    migrate -path .\migrations -database "<DATABASE_URL из backend/.env.dev>" up
-    ```
-
-    Замените значение в угловых скобках строкой подключения к локальной PostgreSQL.
-
-4. В первом терминале запустите backend:
-
-    ```powershell
-    cd backend
-    go run ./cmd/api
-    ```
-
-    API будет доступно на `http://localhost:8080`.
-
-5. Во втором терминале установите зависимости и запустите frontend:
-
-    ```powershell
-    cd frontend
-    corepack enable
-    yarn install --frozen-lockfile
-    yarn dev
-    ```
-
-    Приложение будет доступно на `http://localhost:3000`. В режиме разработки frontend обращается к API на `http://localhost:8080`.
+```powershell
+docker compose -f compose.dev.yaml down
+```
 
 ## Запуск production-стека
 
