@@ -59,17 +59,103 @@ docker compose -f compose.dev.yaml down
 
 ## Запуск production-стека
 
-Для production нужны Docker Compose, настроенный файл `.environments/prod.env` и TLS-сертификаты Nginx: `nginx/certs/fullchain.pem` и `nginx/certs/privkey.pem`. Укажите в env-файле параметры PostgreSQL и Redis, адреса подключения backend к сервисам внутри Compose, а также необходимые секреты. Не публикуйте секреты в репозитории.
+Для развёртывания production-версии проекта не требуется клонировать весь репозиторий или иметь исходный код frontend и backend на сервере. Приложение запускается из опубликованных Docker-образов:
 
-Из корня проекта выполните:
+- [Frontend — feels/fix_bot-frontend](https://hub.docker.com/repository/docker/feels/fix_bot-frontend)
+- [Backend — feels/fix_bot-backend](https://hub.docker.com/repository/docker/feels/fix_bot-backend)
 
-```powershell
-docker compose up --build -d
+Docker Compose загружает необходимые образы из Docker Hub и запускает приложение.
+
+### Структура файлов на сервере
+
+Для развёртывания достаточно подготовить следующую структуру:
+
+```text
+fix_bot/
+├── compose.yaml
+├── .environments/
+│   ├── psq.prod.env
+│   └── prod.env
+├── backend/
+│   └── migrations/
+├── migrations/
+└── nginx/
+    ├── nginx.conf
+    └── certs/
+        ├── fullchain.pem
+        ├── chain.pem
+        ├── cert.pem
+        └── privkey.pem
 ```
 
-Compose применит миграции перед запуском backend. По умолчанию Nginx принимает HTTP на порту 80 и HTTPS на 443; порты можно изменить переменными `HTTP_PORT` и `HTTPS_PORT`. Посмотреть состояние сервисов и журналы можно командами:
+В этой структуре:
 
-```powershell
+- `compose.yaml` — конфигурация Docker Compose, использующая опубликованные образы вместо сборки из исходного кода.
+- `.environments/prod.env` — переменные окружения PostgreSQL, Redis и backend, включая необходимые секреты.
+- `backend/migrations/` и `migrations/` — файлы миграций базы данных, используемые при развёртывании.
+- `nginx/` — конфигурация Nginx и TLS-сертификаты.
+
+Наличие исходников frontend и backend на сервере не требуется.
+
+### Подготовка окружения
+
+Перед запуском необходимо:
+
+1. Установить Docker Engine и Docker Compose.
+2. Подготовить файл `.environments/prod.env`, указав параметры PostgreSQL, Redis, адреса подключения backend к сервисам внутри Docker Compose и необходимые секреты.
+3. Разместить файлы миграций в соответствующих директориях.
+4. Подготовить конфигурацию Nginx и TLS-сертификаты:
+   - `nginx/certs/fullchain.pem`
+   - `nginx/certs/privkey.pem`
+
+Не публикуйте секреты и TLS-ключи в репозитории.
+
+### Запуск
+
+Из директории `fix_bot` выполните:
+
+```bash
+docker compose pull
+docker compose up -d
+```
+
+Первая команда загружает опубликованные Docker-образы, вторая запускает production-стек.
+
+Compose применит миграции перед запуском backend.
+
+По умолчанию Nginx принимает HTTP на порту 80 и HTTPS на 443. Порты можно изменить с помощью переменных `HTTP_PORT` и `HTTPS_PORT`.
+
+### Управление
+
+Посмотреть состояние контейнеров:
+
+```bash
 docker compose ps
+```
+
+Посмотреть журналы всех сервисов:
+
+```bash
 docker compose logs -f
 ```
+
+Посмотреть журналы конкретного сервиса:
+
+```bash
+docker compose logs -f backend
+```
+
+Остановить production-стек:
+
+```bash
+docker compose down
+```
+
+Для обновления приложения после публикации новых версий Docker-образов выполните:
+
+```bash
+docker compose pull
+docker compose up -d
+```
+
+При этом данные PostgreSQL и Redis сохраняются в Docker volumes, поэтому обычное обновление контейнеров не удаляет данные приложения.
